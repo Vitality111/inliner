@@ -89,11 +89,11 @@ const CONFIG = {
   image: {
     jpegQ: FLAGS.jpegQ ?? 50,
     webpQ: FLAGS.webpQ ?? 50,
-    pngLevel: FLAGS.pngLevel ?? 9,
+    pngLevel: FLAGS.pngLevel ?? 1,
     pngQuality: FLAGS.pngQuality ?? 50,
     pngPalette: FLAGS.pngPalette ?? true,
-    gifLossy: FLAGS.gifLossy ?? 180,    // ← нове
-    gifColors: FLAGS.gifColors ?? 48    // ← нове
+    gifLossy: FLAGS.gifLossy ?? 180,
+    gifColors: FLAGS.gifColors ?? 48
   },
   video: {
     codec: FLAGS.codec || 'libx264',
@@ -592,11 +592,15 @@ const processUri = async (uri, baseDir) => {
     const fetched = await fetchAndEncode(uri);
     return fetched || uri;
   }
-  // Локальний шлях
-  const full = path.resolve(baseDir, uri);
+  const decoded = decodeLocalPath(uri);
+  const full = path.resolve(baseDir, decoded);
+  if (!await fs.pathExists(full)) {
+    console.warn('❌ Not found:', full, ' (from:', uri, ')');
+  }
   const encoded = await encodeFile(full);
   return encoded || uri;
 };
+
 
 // -------------------- Інлайнери --------------------
 
@@ -831,7 +835,10 @@ const inlineHtml = async () => {
   console.log(`\n🎉 One-file playable created at: dist/${htmlFileName}`);
   console.log(`📦 Total size: ${(totalFinalSize / 1024).toFixed(1)} KB (saved ${(saved / 1024).toFixed(1)} KB)`);
 };
-
+const decodeLocalPath = (u) => {
+  const clean = String(u).split('#')[0].split('?')[0];
+  try { return decodeURI(clean); } catch { return clean; }
+};
 
 // -------------------- RUN --------------------
 inlineHtml().catch((e) => {
