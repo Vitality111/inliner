@@ -1,25 +1,30 @@
 {
   "name": "inline-builder",
-  "version": "1.5.0",
-  "description": "Compress and inline all assets (CSS, JS, images, fonts, video, audio) into a single HTML file. Also supports optimize-only and deinline modes.",
+  "version": "2.0.0",
+  "description": "Build single-file HTML5 playables by bundling ES modules (esbuild) and inlining CSS/JS/assets (images, fonts, video, audio, WASM, GLB) as optimized data URIs. Supports per-MIME optimization (sharp/ffmpeg/fontmin/gltfpack), asset overrides, and optimize-only mode.",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
+    "minify": "node inline.mjs --minifyJs=true --minifyCss=true --minifyHtml=true",
     "build": "node inline.mjs",
     "optimize": "node inline.mjs --optimizeOnly=true --assetsDir=assets",
-    "deinline": "node inline.mjs --deinline --",
-
-    "cocos:build": "node cocos-inline.mjs --input ./build/web-mobile --output ./playable.html",
-    "cocos:build:full": "node cocos-inline.mjs --input ./build/web-mobile --output ./playable.html --compress-images --compress-audio --compress-fonts --verbose",
-    "cocos:optimize": "node cocos-inline.mjs --input ./build/web-mobile --output ./playable.html --compress-images --compress-audio --compress-fonts"
+    "deinline": "node inline.mjs --deinline --"
   },
   "bin": {
-    "inline": "./inline.mjs",
-    "cocos-inline": "./cocos-inline.mjs"
+    "inline": "./inline.mjs"
   },
   "dependencies": {
-    "fs-extra": "^11.1.1",
+    "esbuild": "^0.27.2",
     "fluent-ffmpeg": "^2.1.3",
     "fontmin": "^0.9.7",
+    "fs-extra": "^11.1.1",
+    "lightningcss": "^1.30.2",
     "sharp": "^0.33.4"
+  },
+  "optionalDependencies": {
+    "gifsicle": "^7.0.1",
+    "gltfpack": "^1.0.0"
   }
 }
