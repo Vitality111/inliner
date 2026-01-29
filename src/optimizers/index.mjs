@@ -16,9 +16,11 @@ export const optimizeByMime = async (buf, mime) => {
             return await optimizeImageBuffer(buf, mime);
         }
         if (mime.startsWith('video/')) {
-            const tmpIn = path.join(__dirname, `.tmp-${Date.now()}-${sha1(buf)}.in`);
+            // Визначаємо розширення за MIME для коректного розпізнавання ffmpeg
+            const ext = mime === 'video/webm' ? '.webm' : '.mp4';
+            const tmpIn = path.join(__dirname, `.tmp-${Date.now()}-${sha1(buf)}${ext}`);
             await fs.writeFile(tmpIn, buf);
-            const out = await optimizeVideoFileToBuffer(tmpIn);
+            const out = await optimizeVideoFileToBuffer(tmpIn, mime);
             await fs.remove(tmpIn).catch(() => { });
             return out.length && out.length < buf.length ? out : buf;
         }

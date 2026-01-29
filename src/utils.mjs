@@ -4,9 +4,14 @@ import path from 'path';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import readline from 'readline';
 import { stats } from './state.mjs';
 
 export const execFileAsync = promisify(execFile);
+
+// Прапорець інтерактивного режиму (встановлюється з inline.mjs)
+let isInteractiveMode = false;
+export const setInteractiveFlag = (val) => { isInteractiveMode = val; };
 
 // -------------------- Cross-platform external runner --------------------
 // On Windows, many npm-installed CLIs are .cmd shims; running via `cmd.exe /c` avoids spawn EINVAL.
@@ -24,7 +29,18 @@ export const replaceAsync = async (str, regex, asyncFn) => {
     if (matches.length === 0) return str;
     const parts = [];
     let lastIndex = 0;
-    const replacements = await Promise.all(matches.map((m) => asyncFn(...m)));
+
+    // В інтерактивному режимі — послідовно, інакше — паралельно
+    let replacements;
+    if (isInteractiveMode) {
+        replacements = [];
+        for (const m of matches) {
+            replacements.push(await asyncFn(...m));
+        }
+    } else {
+        replacements = await Promise.all(matches.map((m) => asyncFn(...m)));
+    }
+
     matches.forEach((m, i) => {
         parts.push(str.slice(lastIndex, m.index), replacements[i]);
         lastIndex = m.index + m[0].length;
@@ -67,3 +83,77 @@ export const logSaving = (label, original, final) => {
 
 export const isHttp = (p) => /^https?:\/\//i.test(p);
 export const isDataUri = (p) => /^data:/i.test(p);
+
+// -------------------- Interactive prompt --------------------
+let interactiveMode = 'ask'; // 'ask' | 'all' | 'none'
+let rl = null;
+
+export const initInteractive = () => {
+    if (rl) return;
+    rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: false
+    });
+};
+
+export const closeInteractive = () => {
+    if (rl) {
+        rl.close();
+        rl = null;
+    }
+    interactiveMode = 'ask'; // reset
+};
+
+export const setInteractiveMode = (mode) => {
+    interactiveMode = mode;
+};
+
+export const getInteractiveMode = () => interactiveMode;
+
+// Запитати користувача чи стискати файл
+// Повертає: true = стискати, false = пропустити
+export const askCompress = async (filename, sizeKb) => {
+    if (interactiveMode === 'all') return true;
+    if (interactiveMode === 'none') return false;
+
+    const sizeStr = sizeKb >= 1024
+        ? `${(sizeKb / 1024).toFixed(1)} MB`
+        : `${sizeKb.toFixed(0)} KB`;
+
+    // Визначаємо іконку по розширенню
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const icons = {
+        png: '🖼️', jpg: '🖼️', jpeg: '🖼️', webp: '🖼️', gif: '🎞️',
+        mp3: '🎵', m4a: '🎵', wav: '🎵', ogg: '🎵',
+        mp4: '🎬', webm: '🎬',
+        woff: '🔤', woff2: '🔤', ttf: '🔤', otf: '🔤',
+        glb: '🎮'
+    };
+    const icon = icons[ext] || '📦';
+
+    process.stdout.write(`\n${icon}  ${filename} (${sizeStr}) - Compress? [y/n/a/s]: `);
+
+    return new Promise((resolve) => {
+        const onData = (chunk) => {
+            const answer = chunk.toString().trim().toLowerCase();
+            process.stdin.removeListener('data', onData);
+
+            if (answer === 'a') {
+                interactiveMode = 'all';
+                console.log('   ➡️  Auto mode: compressing all remaining files');
+                resolve(true);
+            } else if (answer === 's') {
+                interactiveMode = 'none';
+                console.log('   ➡️  Skip mode: skipping all remaining files');
+                resolve(false);
+            } else if (answer === 'n') {
+                resolve(false);
+            } else {
+                resolve(true);
+            }
+        };
+
+        process.stdin.once('data', onData);
+    });
+};

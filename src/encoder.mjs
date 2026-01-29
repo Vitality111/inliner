@@ -1,8 +1,8 @@
 // FILE: src/encoder.mjs
 import fs from 'fs-extra';
 import path from 'path';
-import { decodeLocalPath, isHttp, isDataUri, logSaving } from './utils.mjs';
-import { CONFIG, OVERRIDE_DIR_NAME } from './config.mjs';
+import { decodeLocalPath, isHttp, isDataUri, logSaving, askCompress } from './utils.mjs';
+import { CONFIG, OVERRIDE_DIR_NAME, INTERACTIVE } from './config.mjs';
 import { state, dataUriCache, fileCache } from './state.mjs';
 import { optimizeByMime } from './optimizers/index.mjs';
 import { MIME } from './constants.mjs';
@@ -34,9 +34,20 @@ export const reencodeDataUri = async (dataUri) => {
 
     const { mime, buffer } = parsed;
     const before = buffer.length;
+
+    // В інтерактивному режимі не перекодовуємо data:URI повторно
+    // (вони вже були оброблені через encodeFile з вибором користувача)
+    if (INTERACTIVE) {
+        dataUriCache.set(dataUri, dataUri);
+        return dataUri;
+    }
+
     const optimized = await optimizeByMime(buffer, mime);
-    const out = toDataUri(mime, optimized);
-    logSaving(`data:${mime}`, before, optimized.length);
+
+    // Якщо оптимізований більший — повертаємо оригінал
+    const finalBuf = optimized.length <= buffer.length ? optimized : buffer;
+    const out = toDataUri(mime, finalBuf);
+    logSaving(`data:${mime}`, before, finalBuf.length);
     dataUriCache.set(dataUri, out);
     return out;
 };
@@ -52,10 +63,17 @@ export const encodeFile = async (fileAbsPath) => {
     const before = original.length;
     let outBuf = original;
 
-    try {
-        outBuf = await optimizeByMime(original, mime);
-    } catch {
-        outBuf = original;
+    // Інтерактивний режим — запитуємо чи стискати
+    const shouldCompress = INTERACTIVE
+        ? await askCompress(path.basename(fileAbsPath), before / 1024)
+        : true;
+
+    if (shouldCompress) {
+        try {
+            outBuf = await optimizeByMime(original, mime);
+        } catch {
+            outBuf = original;
+        }
     }
 
     const finalBuf = outBuf.length <= original.length ? outBuf : original;

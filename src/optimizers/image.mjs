@@ -5,6 +5,67 @@ import path from 'path';
 import { CONFIG, __dirname } from '../config.mjs';
 import { runExternal } from '../utils.mjs';
 
+// Спробуємо імпортувати pngquant-bin
+let pngquantPath = 'pngquant';
+try {
+    const pngquantBin = await import('pngquant-bin');
+    pngquantPath = pngquantBin.default;
+} catch { }
+
+// PNG через pngquant (lossy) для кращого стиснення
+export const optimizePngBuffer = async (buf) => {
+    const tmpIn = path.join(__dirname, `.tmp-png-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
+    const tmpOut = `${tmpIn}.out.png`;
+
+    await fs.writeFile(tmpIn, buf);
+
+    const quality = CONFIG.image.pngQuality; // 0-100, чим вище тим краща якість
+    const speed = CONFIG.image.pngLevel;     // 1-11, 1=найкращий/повільний, 11=швидкий/гірший
+    const noDither = CONFIG.image.pngPalette; // true = вимкнути дизеринг (менший розмір, гірші градієнти)
+
+    // pngquant quality: min-max
+    const minQ = Math.max(0, Math.floor(quality * 0.8));
+
+    // pngquant args
+    const args = [
+        `--quality=${minQ}-${quality}`,
+        '--speed', String(Math.min(11, Math.max(1, speed || 1))),
+        '--force',
+        '--strip',
+        '--output', tmpOut,
+    ];
+
+    // Дизеринг важливий для градієнтів
+    if (noDither) {
+        args.push('--nofs'); // no Floyd-Steinberg dithering
+    }
+
+    args.push(tmpIn);
+
+    try {
+        await runExternal(pngquantPath, args);
+        const outBuf = await fs.readFile(tmpOut);
+
+        await fs.remove(tmpIn).catch(() => { });
+        await fs.remove(tmpOut).catch(() => { });
+
+        return outBuf.length && outBuf.length < buf.length ? outBuf : buf;
+    } catch (e) {
+        // If pngquant fails, fallback to sharp
+        await fs.remove(tmpIn).catch(() => { });
+        await fs.remove(tmpOut).catch(() => { });
+
+        try {
+            return await sharp(buf).png({
+                compressionLevel: 9,
+                palette: !!CONFIG.image.pngPalette
+            }).toBuffer();
+        } catch {
+            return buf;
+        }
+    }
+};
+
 export const optimizeGifBuffer = async (buf) => {
     const tmpIn = path.join(__dirname, `.tmp-gif-${Date.now()}-${Math.random().toString(36).slice(2)}.gif`);
     const tmpOut = `${tmpIn}.out.gif`;
@@ -47,14 +108,10 @@ export const optimizeImageBuffer = async (buf, mime) => {
             return await sharp(buf).webp({ quality: CONFIG.image.webpQ }).toBuffer();
         }
         if (mime === 'image/png') {
-            return await sharp(buf).png({
-                compressionLevel: CONFIG.image.pngLevel,
-                palette: !!CONFIG.image.pngPalette,
-                quality: CONFIG.image.pngQuality
-            }).toBuffer();
+            return await optimizePngBuffer(buf);
         }
         if (mime === 'image/gif') {
-            return await optimizeGifBuffer(buf); // ← тут
+            return await optimizeGifBuffer(buf);
         }
         if (mime === 'image/svg+xml') {
             return buf;

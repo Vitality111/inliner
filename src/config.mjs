@@ -21,6 +21,7 @@ export const FLAGS = Object.fromEntries(
 );
 
 export const OPTIMIZE_ONLY = !!FLAGS.optimizeOnly;
+export const INTERACTIVE = !!FLAGS.interactive || !!FLAGS.i;
 export const ASSETS_DIR_RAW = FLAGS.assetsDir || null;
 export const OVERRIDE_DIR_NAME = 'dir';
 export const OPT_EXTS = new Set([
@@ -37,7 +38,7 @@ export const CONFIG = {
         webpQ: FLAGS.webpQ ?? 50,
         pngLevel: FLAGS.pngLevel ?? 1,
         pngQuality: FLAGS.pngQuality ?? 50,
-        pngPalette: FLAGS.pngPalette ?? true,
+        pngPalette: FLAGS.pngPalette ?? false,
         gifLossy: FLAGS.gifLossy ?? 180,
         gifColors: FLAGS.gifColors ?? 48
     },
@@ -46,7 +47,7 @@ export const CONFIG = {
         crf: FLAGS.crf ?? 26,
         preset: FLAGS.preset || 'slow',
         tune: FLAGS.tune,                 // 'film' | 'animation' | 'grain'
-        maxWidth: FLAGS.maxWidth ?? 540, // масштаб із збереженням пропорцій
+        maxWidth: FLAGS.maxWidth ?? 1080, // масштаб із збереженням пропорцій
         fps: FLAGS.fps,                   // якщо не задано — оригінал
         twoPass: !!FLAGS.twoPass,
         targetMbps: FLAGS.targetMbps,
@@ -55,7 +56,7 @@ export const CONFIG = {
         faststart: FLAGS.faststart !== false
     },
     audio: {
-        mp3Kbps: FLAGS.mp3Kbps ?? 128
+        mp3Kbps: FLAGS.mp3Kbps ?? 96
     },
     font: {
         subset: FLAGS.fontSubset || 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'

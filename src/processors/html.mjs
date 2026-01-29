@@ -28,13 +28,14 @@ export const inlineSrcset = async (html, basePath) => {
         /\s(srcset)=["']([^"']+)["']/gi,
         async (_, attr, list) => {
             const items = list.split(',').map(s => s.trim()).filter(Boolean);
-            const mapped = await Promise.all(items.map(async item => {
+            const mapped = [];
+            for (const item of items) {
                 const parts = item.split(/\s+/, 2);
                 const url = parts[0];
                 const descriptor = parts[1] || '';
                 const replaced = await processUri(url, basePath);
-                return `${replaced}${descriptor ? ' ' + descriptor : ''}`;
-            }));
+                mapped.push(`${replaced}${descriptor ? ' ' + descriptor : ''}`);
+            }
             return ` ${attr}="${mapped.join(', ')}"`;
         }
     );

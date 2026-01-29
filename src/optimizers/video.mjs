@@ -8,11 +8,15 @@ export const ffprobe = (file) =>
         ffmpeg.ffprobe(file, (err, data) => (err ? rej(err) : res(data)))
     );
 
-export const optimizeVideoFileToBuffer = async (tmpInPath) => {
+export const optimizeVideoFileToBuffer = async (tmpInPath, mime = 'video/mp4') => {
     const {
         codec, crf, preset, tune, maxWidth, fps, twoPass,
         targetMbps, maxRateFactor, audioKbps, faststart
     } = CONFIG.video;
+
+    // Визначаємо вихідний формат
+    const outExt = mime === 'video/webm' ? '.webm' : '.mp4';
+    const isWebm = outExt === '.webm';
 
     // Дізнаємось ширину вхідного відео
     let inW = 0;
@@ -27,19 +31,28 @@ export const optimizeVideoFileToBuffer = async (tmpInPath) => {
         ? `scale=${maxWidth}:-2`
         : 'scale=trunc(iw/2)*2:trunc(ih/2)*2';
 
-    const tmpOut = `${tmpInPath}.${Date.now()}.min.mp4`;
-    const base = [
-        '-pix_fmt yuv420p',
-        `-c:v ${codec}`,
-        `-preset ${preset}`,
-        `-crf ${crf}`,
-        '-profile:v high',
-        '-level 4.1',
-        `-vf ${scaleFilter}`
-    ];
-    if (tune) base.push(`-tune ${tune}`);
+    const tmpOut = `${tmpInPath}.${Date.now()}.min${outExt}`;
+
+    // Базові опції залежно від формату
+    const base = isWebm
+        ? [
+            '-c:v libvpx-vp9',
+            `-crf ${crf}`,
+            '-b:v 0',
+            `-vf ${scaleFilter}`
+        ]
+        : [
+            '-pix_fmt yuv420p',
+            `-c:v ${codec}`,
+            `-preset ${preset}`,
+            `-crf ${crf}`,
+            '-profile:v high',
+            '-level 4.1',
+            `-vf ${scaleFilter}`
+        ];
+    if (tune && !isWebm) base.push(`-tune ${tune}`);
     if (Number.isFinite(fps)) base.push(`-r ${fps}`);
-    if (faststart) base.push('-movflags +faststart');
+    if (faststart && !isWebm) base.push('-movflags +faststart');
 
     const vb = Number.isFinite(targetMbps) ? `${targetMbps}M` : null;
     const maxrate =
@@ -52,7 +65,9 @@ export const optimizeVideoFileToBuffer = async (tmpInPath) => {
             : null;
     if (vb) base.push(`-b:v ${vb}`, `-minrate ${vb}`, `-maxrate ${maxrate}`, `-bufsize ${bufsize}`);
 
-    const aopts = ['-c:a aac', `-b:a ${audioKbps}k`];
+    const aopts = isWebm
+        ? ['-c:a libopus', `-b:a ${audioKbps}k`]
+        : ['-c:a aac', `-b:a ${audioKbps}k`];
 
     if (twoPass && vb) {
         const passlog = `${tmpInPath}.2pass`;
@@ -78,7 +93,11 @@ export const optimizeVideoFileToBuffer = async (tmpInPath) => {
             ffmpeg(tmpInPath)
                 .outputOptions([...base, ...aopts])
                 .save(tmpOut)
-                .on('end', resolve).on('error', reject);
+                .on('end', resolve)
+                .on('error', (err) => {
+                    console.error('❌ FFmpeg error:', err.message);
+                    reject(err);
+                });
         });
     }
 

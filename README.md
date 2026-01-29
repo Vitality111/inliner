@@ -6,7 +6,8 @@ Build single-file HTML5 playables by bundling ES modules and inlining all assets
 
 - **ES Module Bundling** — Bundle JavaScript modules using esbuild
 - **Asset Inlining** — Inline CSS, JS, images, fonts, video, audio, WASM, JSON, GLB as data URIs
-- **Per-MIME Optimization** — Compress assets using sharp, ffmpeg, fontmin, gltfpack, gifsicle
+- **Per-MIME Optimization** — Compress assets using sharp, pngquant, ffmpeg, fontmin, gltfpack, gifsicle
+- **Interactive Mode** — Choose which files to compress with `--interactive` flag
 - **Data URI Re-encoding** — Re-optimize existing data URIs in your HTML
 - **External Resource Fetching** — Optionally fetch and inline HTTP/HTTPS resources
 - **Asset Overrides** — Replace assets from a `dir/` folder with relative-path priority
@@ -80,6 +81,44 @@ node inline.mjs --optimizeOnly --assetsDir=assets
 - `--fetchExternals` — Fetch and inline HTTP/HTTPS resources
 - `--optimizeOnly` — Only optimize assets in `--assetsDir`, skip HTML build
 - `--assetsDir=<path>` — Path to assets folder (for optimize-only mode)
+- `--interactive` or `--i` — Interactive mode: choose which files to compress
+
+### Interactive Mode
+
+Enable interactive mode to manually select which assets to compress:
+
+```bash
+npm run minify index.html -- --interactive
+```
+
+You'll be prompted for each file:
+```
+🎛️  Interactive mode enabled. Options: [y]es, [n]o, [a]ll auto, [s]kip all
+
+🖼️  bg.png (448 KB) - Compress? [y/n/a/s]: y
+✅ bg.png: 458375 → 40332 bytes (91.2% saved)
+
+🎵  music.mp3 (1.2 MB) - Compress? [y/n/a/s]: n
+✅ music.mp3: 1258000 → 1258000 bytes (0.0% saved)
+
+🎬  video.mp4 (2.5 MB) - Compress? [y/n/a/s]: a
+   ➡️  Auto mode: compressing all remaining files
+```
+
+**Options:**
+- `y` (or Enter) — Compress this file
+- `n` — Skip compression, keep original
+- `a` — Auto: compress all remaining files automatically
+- `s` — Skip: don't compress any remaining files
+
+**File type icons:**
+- 🖼️ Images (PNG, JPG, WebP)
+- 🎞️ GIF animations
+- 🎵 Audio (MP3, WAV, M4A, OGG)
+- 🎬 Video (MP4, WebM)
+- 🔤 Fonts (WOFF, TTF, OTF)
+- 🎮 3D models (GLB)
+- 📦 Other files
 
 ### Minification
 
@@ -91,9 +130,9 @@ node inline.mjs --optimizeOnly --assetsDir=assets
 
 - `--jpegQ=<0-100>` — JPEG quality (default: 50)
 - `--webpQ=<0-100>` — WebP quality (default: 50)
-- `--pngLevel=<0-9>` — PNG compression level (default: 1)
-- `--pngQuality=<0-100>` — PNG quality (default: 50)
-- `--pngPalette=<true|false>` — Use palette for PNG (default: true)
+- `--pngLevel=<1-11>` — PNG compression speed, 1=best/slow, 11=fast/worse (default: 1)
+- `--pngQuality=<0-100>` — PNG quality (default: 80)
+- `--pngPalette=<true|false>` — Disable dithering for smaller size (default: false)
 - `--gifLossy=<number>` — GIF lossy compression (default: 180)
 - `--gifColors=<1-256>` — GIF color count (default: 48)
 
@@ -172,6 +211,22 @@ npm run minify <file>    # Build with full minification
 npm run build <file>     # Build without minification
 npm run optimize         # Optimize assets in ./assets folder
 ```
+
+## Dependencies
+
+### Required (installed via npm)
+- `esbuild` — JavaScript bundling
+- `sharp` — Image optimization (JPEG, PNG, WebP)
+- `fluent-ffmpeg` — Video/audio processing
+- `fontmin` — Font subsetting
+- `terser` — JavaScript minification
+- `lightningcss` — CSS minification
+- `fs-extra` — File system utilities
+
+### Optional (installed via npm)
+- `pngquant-bin` — Lossy PNG compression (great for gradients)
+- `gifsicle` — GIF optimization
+- `gltfpack` — GLB/GLTF optimization
 
 ## License
 
