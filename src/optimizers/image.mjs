@@ -21,12 +21,15 @@ export const optimizePngBuffer = async (buf) => {
 
     const quality = CONFIG.image.pngQuality; // 0-100, чим вище тим краща якість
     const speed = CONFIG.image.pngLevel;     // 1-11, 1=найкращий/повільний, 11=швидкий/гірший
+    const colors = CONFIG.image.pngColors;   // 2-256, кількість кольорів у палітрі
     const noDither = CONFIG.image.pngPalette; // true = вимкнути дизеринг (менший розмір, гірші градієнти)
 
     // pngquant quality: min-max
-    const minQ = Math.max(0, Math.floor(quality * 0.8));
+    // Встановлюємо min=0 щоб pngquant не падав з exit code 99 ("quality too low")
+    // для складних зображень, де неможливо досягти високої якості
+    const minQ = 0;
 
-    // pngquant args
+    // pngquant args: pngquant [options] [ncolors] -- input.png
     const args = [
         `--quality=${minQ}-${quality}`,
         '--speed', String(Math.min(11, Math.max(1, speed || 1))),
@@ -40,6 +43,13 @@ export const optimizePngBuffer = async (buf) => {
         args.push('--nofs'); // no Floyd-Steinberg dithering
     }
 
+    // Кількість кольорів у палітрі (2-256)
+    // 256 - це значення за замовчуванням, не вказуємо його щоб уникнути проблем з аргументами
+    if (Number.isFinite(colors) && colors >= 2 && colors < 256) {
+        args.push(String(colors));
+    }
+
+    // Input файл
     args.push(tmpIn);
 
     try {
@@ -52,6 +62,7 @@ export const optimizePngBuffer = async (buf) => {
         return outBuf.length && outBuf.length < buf.length ? outBuf : buf;
     } catch (e) {
         // If pngquant fails, fallback to sharp
+        console.error('⚠️ pngquant failed:', e?.message || e);
         await fs.remove(tmpIn).catch(() => { });
         await fs.remove(tmpOut).catch(() => { });
 

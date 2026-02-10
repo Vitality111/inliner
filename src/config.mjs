@@ -37,7 +37,8 @@ export const CONFIG = {
         jpegQ: FLAGS.jpegQ ?? 50,
         webpQ: FLAGS.webpQ ?? 50,
         pngLevel: FLAGS.pngLevel ?? 1,
-        pngQuality: FLAGS.pngQuality ?? 50,
+        pngQuality: FLAGS.pngQuality ?? 100,
+        pngColors: FLAGS.pngColors ?? 256,  // 2-256, кількість кольорів у палітрі
         pngPalette: FLAGS.pngPalette ?? false,
         gifLossy: FLAGS.gifLossy ?? 180,
         gifColors: FLAGS.gifColors ?? 48
