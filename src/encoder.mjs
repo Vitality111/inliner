@@ -156,8 +156,18 @@ export const processUri = async (uri, baseDir) => {
         }
     }
 
-    const full = path.resolve(baseDir, decoded);
-    if (!await fs.pathExists(full)) {
+    let full = path.resolve(baseDir, decoded);
+    // Fallback: if not found relative to baseDir (e.g. JS file's dir),
+    // try resolving relative to project root (HTML's dir).
+    // This handles Vite/Webpack bundles where JS is in assets/ but paths are relative to HTML root.
+    if (!await fs.pathExists(full) && state.projectRoot) {
+        const fallback = path.resolve(state.projectRoot, decoded);
+        if (await fs.pathExists(fallback)) {
+            full = fallback;
+        } else {
+            console.warn(`❌ Not found: ${full} and ${fallback}  (from: ${uri} )`);
+        }
+    } else if (!await fs.pathExists(full)) {
         console.warn('❌ Not found:', full, ' (from:', uri, ')');
     }
     const encoded = await encodeFile(full);

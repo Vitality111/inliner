@@ -48,7 +48,7 @@ export const CONFIG = {
         crf: FLAGS.crf ?? 26,
         preset: FLAGS.preset || 'slow',
         tune: FLAGS.tune,                 // 'film' | 'animation' | 'grain'
-        maxWidth: FLAGS.maxWidth ?? 1080, // масштаб із збереженням пропорцій
+        maxWidth: FLAGS.maxWidth ?? 430, // масштаб із збереженням пропорцій
         fps: FLAGS.fps,                   // якщо не задано — оригінал
         twoPass: !!FLAGS.twoPass,
         targetMbps: FLAGS.targetMbps,
@@ -57,7 +57,7 @@ export const CONFIG = {
         faststart: FLAGS.faststart !== false
     },
     audio: {
-        mp3Kbps: FLAGS.mp3Kbps ?? 96
+        mp3Kbps: FLAGS.mp3Kbps ?? 92,
     },
     font: {
         subset: FLAGS.fontSubset || 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'

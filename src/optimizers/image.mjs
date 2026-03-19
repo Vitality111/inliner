@@ -12,8 +12,24 @@ try {
     pngquantPath = pngquantBin.default;
 } catch { }
 
+// PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+const isValidPng = (buf) => buf.length >= 8 && buf.subarray(0, 8).equals(PNG_MAGIC);
+
 // PNG через pngquant (lossy) для кращого стиснення
 export const optimizePngBuffer = async (buf) => {
+    // Skip pngquant for tiny buffers or non-PNG data (e.g. inline pixel data)
+    if (!isValidPng(buf) || buf.length < 256) {
+        try {
+            return await sharp(buf).png({
+                compressionLevel: 9,
+                palette: !!CONFIG.image.pngPalette
+            }).toBuffer();
+        } catch {
+            return buf;
+        }
+    }
+
     const tmpIn = path.join(__dirname, `.tmp-png-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
     const tmpOut = `${tmpIn}.out.png`;
 

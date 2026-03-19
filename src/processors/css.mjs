@@ -23,7 +23,7 @@ export const processCssContent = async (cssText, baseDir) => {
         /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"']*))\s*\)/gi,
         async (_, g1, g2, g3) => {
             const rawPath = unescapeCssPath((g1 ?? g2 ?? g3 ?? '').trim());
-            if (!rawPath) return `url(${g1 !== undefined ? `"${g1}"` : g2 !== undefined ? `'${g2}'` : g3})`;
+            if (!rawPath || rawPath.startsWith('#')) return `url(${g1 !== undefined ? `"${g1}"` : g2 !== undefined ? `'${g2}'` : g3})`;
             const replaced = await processUri(rawPath, baseDir);
             // якщо було в подвійних/одинарних — повертаємо з тим самим типом лапок
             if (g1 !== undefined) return `url("${replaced}")`;
