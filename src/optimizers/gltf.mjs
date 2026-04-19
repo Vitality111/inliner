@@ -1,9 +1,33 @@
 // FILE: src/optimizers/gltf.mjs
+// ─────────────────────────────────────────────────────────────────────────────
+// Оптимізатор 3D моделей GLB/GLTF через gltfpack (meshoptimizer).
+//
+// gltfpack виконує:
+//   - Стиснення мешів (mesh compression) через meshopt кодек
+//   - Текстурне стиснення через BasisU (якщо підтримується)
+//   - Спрощення геометрії (simplification ratio)
+//   - Збереження імен і матеріалів для дебагу
+//
+// ⚠️ Meshopt decoder потрібен у runtime для декодування стиснених мешів!
+//    Підключи meshopt_decoder.js у свій проєкт.
+//
+// ⚠️ BasisU текстурне стиснення може бути недоступне в деяких білдах gltfpack.
+//    В такому разі автоматично повторюється без -tc.
+//
+// Залежності: gltfpack (опціональна npm залежність або в PATH)
+// ─────────────────────────────────────────────────────────────────────────────
+
 import fs from 'fs-extra';
 import path from 'path';
 import { runExternal } from '../utils.mjs';
 import { FLAGS, __dirname } from '../config.mjs';
 
+/**
+ * Оптимізує GLB буфер через gltfpack.
+ *
+ * @param {Buffer} buf — оригінальний GLB буфер
+ * @returns {Promise<Buffer>} оптимізований буфер (або оригінал при помилці/збільшенні)
+ */
 export const optimizeGlbBuffer = async (buf) => {
     const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const tmpIn = path.join(__dirname, `.tmp-${stamp}.glb`);
@@ -12,25 +36,29 @@ export const optimizeGlbBuffer = async (buf) => {
     await fs.writeFile(tmpIn, buf);
 
     const baseArgs = [
-        '-i', tmpIn,
-        '-o', tmpOut,
+        '-i', tmpIn,           // вхідний файл
+        '-o', tmpOut,          // вихідний файл
 
-        // mesh compression (requires meshopt decoder at runtime)
-        '-cc',
+        '-cc',                 // mesh compression (meshopt codec)
+                               // ⚠️ Потребує meshopt_decoder.js у runtime!
 
-        // keep names/materials (safer for animations / debugging)
-        '-kn',
-        '-km',
+        '-kn',                 // keep names — зберігає назви нодів/мешів
+        '-km',                 // keep materials — зберігає матеріали
 
-        // mild simplification by default; override via CLI if needed later
+        /**
+         * Коефіцієнт спрощення геометрії (simplification ratio).
+         *   1.0 = без спрощення (оригінальна геометрія)
+         *   0.5 = зменшити кількість трикутників вдвічі
+         *   0.1 = агресивне спрощення (для LOD)
+         * CLI: --glbSi=1.0
+         */
         '-si', String(FLAGS.glbSi ?? 1.0),
 
-        // avoid quantizing animations (reduces artifacts)
-        '-noq'
+        '-noq'                 // не квантизувати анімації (зменшує артефакти)
     ];
 
     try {
-        // Try with texture compression if available (BasisU). If not, retry without -tc.
+        // Спершу пробуємо з текстурним стисненням BasisU (-tc)
         try {
             await runExternal('gltfpack', [...baseArgs, '-tc']);
         } catch (e) {
@@ -41,6 +69,8 @@ export const optimizeGlbBuffer = async (buf) => {
                 msg.includes('built without BasisU');
 
             if (basisMissing) {
+                // BasisU недоступне — повторюємо без текстурного стиснення
+                console.warn('⚠️ gltfpack: BasisU not available, retrying without -tc');
                 await runExternal('gltfpack', baseArgs);
             } else {
                 throw e;
@@ -57,9 +87,10 @@ export const optimizeGlbBuffer = async (buf) => {
         await fs.remove(tmpIn).catch(() => { });
         await fs.remove(tmpOut).catch(() => { });
 
+        // Повертаємо тільки якщо менший за оригінал
         return out.length && out.length < buf.length ? out : buf;
     } catch (e) {
-        console.error('gltfpack failed:', e?.message || e);
+        console.warn('⚠️ gltfpack skipped:', e?.message || e);
         await fs.remove(tmpIn).catch(() => { });
         await fs.remove(tmpOut).catch(() => { });
         return buf;
