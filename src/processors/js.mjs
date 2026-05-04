@@ -40,6 +40,7 @@ import { CONFIG } from '../config.mjs';
  * @returns {Promise<string>} JS з інлайненими ассетами
  */
 export const processJsContent = async (jsText, baseDir) => {
+    // Замінюємо ВСІ рядкові шляхи до файлів на data:URI
     jsText = await replaceAsync(
         jsText,
         /(["'`])([^"'`]*?\.(?:png|jpe?g|gif|svg|webp|mp4|webm|mp3|m4a|wav|ogg|json|txt|wasm|glb|woff2?|ttf|otf)(?:\?[^"'`#]*)?(?:#[^"'`]*)?|data:[^"'`]+?)\1/gi,
@@ -48,6 +49,7 @@ export const processJsContent = async (jsText, baseDir) => {
             return `${quote}${replaced}${quote}`;
         }
     );
+
     return jsText;
 };
 
@@ -76,7 +78,9 @@ const inlineAssetsPlugin = () => ({
 
             let text = await fs.readFile(args.path, 'utf8');
 
-            // Інлайнимо ассети відносно директорії поточного модуля
+            // ⚠️ ВАЖЛИВО: Інлайнимо ассети ПЕРЕД бандлінгом
+            // processJsContent замінює рядкові шляхи на data:URI,
+            // щоб мініфікація не могла скоротити змінні, які на них посилаються
             text = await processJsContent(text, path.dirname(args.path));
 
             return {
@@ -134,7 +138,16 @@ export const bundleJs = async (entryPath, format = 'iife') => {
             target: ['es2017'],
             logLevel: 'silent',        // не спамити в консоль
         });
-        return result.outputFiles[0].text;
+        let bundled = result.outputFiles[0].text;
+
+        // ⚠️ Обробити ассети в JS ПЕРЕД мініфікацією (важливо!)
+        // Якщо minify=true, то вже зроблено всередині esbuild.build
+        // Але якщо фалбек або зовнішні скрипти - потрібно вручну
+        if (!CONFIG.js.minify) {
+            bundled = await processJsContent(bundled, path.dirname(entryPath));
+        }
+
+        return bundled;
     } catch (e) {
         console.warn(`⚠️ Bundling failed for ${entryPath}:`, e.message);
         throw e;
@@ -210,6 +223,42 @@ export const inlineJsScripts = async (html, basePath) => {
                 js = await maybeMinifyJs(js);
                 return `<script${pre}${post}>${js}</script>`;
             }
+        }
+    );
+};
+
+// ========================== INLINE SCRIPTS PROCESSING ==========================
+
+/**
+ * Обробляє вбудовані <script>...</script> (які не мають атрибуту src).
+ * Знаходить ассети всередині (processJsContent) та мініфікує код (maybeMinifyJs).
+ *
+ * @param {string} html — HTML контент
+ * @param {string} basePath — базовий шлях
+ * @returns {Promise<string>} HTML з обробленими вбудованими скриптами
+ */
+export const processInlineScripts = async (html, basePath) => {
+    return await replaceAsync(
+        html,
+        /<script([^>]*)>([\s\S]*?)<\/script>/gi,
+        async (match, attr, content) => {
+            // Ігноруємо зовнішні скрипти, бо їх обробить inlineJsScripts
+            if (attr.includes('src=')) return match;
+            if (attr.includes('src =')) return match;
+
+            // Ігноруємо шаблони, JSON тощо
+            const lowerAttr = attr.toLowerCase();
+            if (lowerAttr.includes('type=') && 
+               !lowerAttr.includes('text/javascript') && 
+               !lowerAttr.includes('module')) {
+                return match;
+            }
+
+            if (!content.trim()) return match;
+
+            let js = await processJsContent(content, basePath);
+            js = await maybeMinifyJs(js);
+            return `<script${attr}>${js}</script>`;
         }
     );
 };

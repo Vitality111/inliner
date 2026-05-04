@@ -13,7 +13,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { decodeLocalPath, isHttp, isDataUri, logSaving, askCompress } from './utils.mjs';
 import { CONFIG, OVERRIDE_DIR_NAME, INTERACTIVE } from './config.mjs';
-import { state, dataUriCache, fileCache } from './state.mjs';
+import { state, dataUriCache, dataUriPromiseCache, fileCache, filePromiseCache } from './state.mjs';
 import { optimizeByMime } from './optimizers/index.mjs';
 import { MIME } from './constants.mjs';
 
@@ -68,7 +68,7 @@ export const fromDataUri = (dataUri) => {
  * @param {string} dataUri — оригінальний data:URI
  * @returns {Promise<string>} оптимізований data:URI (або оригінал якщо не вдалося)
  */
-export const reencodeDataUri = async (dataUri) => {
+const reencodeDataUriUncached = async (dataUri) => {
     if (dataUriCache.has(dataUri)) return dataUriCache.get(dataUri);
 
     const parsed = fromDataUri(dataUri);
@@ -93,6 +93,19 @@ export const reencodeDataUri = async (dataUri) => {
     return out;
 };
 
+export const reencodeDataUri = async (dataUri) => {
+    if (dataUriCache.has(dataUri)) return dataUriCache.get(dataUri);
+    if (dataUriPromiseCache.has(dataUri)) return await dataUriPromiseCache.get(dataUri);
+
+    const work = reencodeDataUriUncached(dataUri);
+    dataUriPromiseCache.set(dataUri, work);
+    try {
+        return await work;
+    } finally {
+        dataUriPromiseCache.delete(dataUri);
+    }
+};
+
 // ========================== FILE ENCODING ==========================
 
 /**
@@ -104,7 +117,7 @@ export const reencodeDataUri = async (dataUri) => {
  * @param {string} fileAbsPath — абсолютний шлях до файлу
  * @returns {Promise<string|null>} data:URI або null якщо файл не існує
  */
-export const encodeFile = async (fileAbsPath) => {
+const encodeFileUncached = async (fileAbsPath) => {
     if (!await fs.pathExists(fileAbsPath)) return null;
     if (fileCache.has(fileAbsPath)) return fileCache.get(fileAbsPath);
 
@@ -139,6 +152,19 @@ export const encodeFile = async (fileAbsPath) => {
     dataUriCache.set(dataUri, dataUri);
 
     return dataUri;
+};
+
+export const encodeFile = async (fileAbsPath) => {
+    if (fileCache.has(fileAbsPath)) return fileCache.get(fileAbsPath);
+    if (filePromiseCache.has(fileAbsPath)) return await filePromiseCache.get(fileAbsPath);
+
+    const work = encodeFileUncached(fileAbsPath);
+    filePromiseCache.set(fileAbsPath, work);
+    try {
+        return await work;
+    } finally {
+        filePromiseCache.delete(fileAbsPath);
+    }
 };
 
 // ========================== HTTP FETCH & ENCODE ==========================

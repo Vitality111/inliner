@@ -10,6 +10,7 @@
 
 import fs from 'fs-extra';
 import path from 'path';
+import os from 'os';
 import { sha1 } from '../utils.mjs';
 import { __dirname } from '../config.mjs';
 import { optimizeImageBuffer } from './image.mjs';
@@ -45,7 +46,7 @@ export const optimizeByMime = async (buf, mime) => {
         // Розширення важливе — ffmpeg визначає формат за ним.
         if (mime.startsWith('video/')) {
             const ext = mime === 'video/webm' ? '.webm' : '.mp4';
-            const tmpIn = path.join(__dirname, `.tmp-${Date.now()}-${sha1(buf)}${ext}`);
+            const tmpIn = path.join(os.tmpdir(), `builder-tmp-${Date.now()}-${sha1(buf)}${ext}`);
             await fs.writeFile(tmpIn, buf);
             try {
                 const out = await optimizeVideoFileToBuffer(tmpIn, mime);
@@ -59,7 +60,7 @@ export const optimizeByMime = async (buf, mime) => {
         // ffmpeg працює з файлами. Розширення .in — ffmpeg все одно визначає формат
         // за magic bytes, а не за розширенням.
         if (mime.startsWith('audio/')) {
-            const tmpIn = path.join(__dirname, `.tmp-${Date.now()}-${sha1(buf)}.in`);
+            const tmpIn = path.join(os.tmpdir(), `builder-tmp-${Date.now()}-${sha1(buf)}.in`);
             await fs.writeFile(tmpIn, buf);
             try {
                 // optimizeAudioFileToBuffer повертає { buffer, mime: outMime }

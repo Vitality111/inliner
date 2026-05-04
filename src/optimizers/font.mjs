@@ -1,28 +1,29 @@
 // FILE: src/optimizers/font.mjs
 // ─────────────────────────────────────────────────────────────────────────────
-// Оптимізатор шрифтів через Fontmin (font subsetting).
+// Оптимізатор шрифтів через subset-font (harfbuzz/hb-subset WASM).
 //
 // Видаляє з шрифту всі гліфи, крім тих що зазначені в CONFIG.font.subset.
 // Це може СУТТЄВО зменшити розмір шрифту (наприклад, з 500KB до 30KB),
-// якщо використовується лише латиниця.
+// якщо використовується лише частина символів.
 //
 // ⚠️ Якщо в тексті з'являться символи, які не увійшли в subset —
 //    вони не відобразяться! Перевіряй CONFIG.font.subset.
 //
-// Fontmin працює через файлову систему (не з буферами), тому
-// створюються тимчасові файли.
+// subset-font базується на harfbuzz і коректно працює з:
+//   - Extended Latin (турецькі ş ç ğ ı İ, французькі é è ê, тощо)
+//   - CJK (японські, китайські, корейські ієрогліфи)
+//   - Деванагарі (хінді), арабська, іврит тощо
+//   - Variable Fonts
+//   - TTF, OTF, WOFF, WOFF2
 //
-// Залежності: fontmin (npm)
+// Залежності: subset-font (npm)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import Fontmin from 'fontmin';
-import fs from 'fs-extra';
-import path from 'path';
-import { promisify } from 'util';
-import { CONFIG, __dirname } from '../config.mjs';
+import subsetFont from 'subset-font';
+import { CONFIG } from '../config.mjs';
 
 /**
- * Оптимізує буфер шрифту через font subsetting.
+ * Оптимізує буфер шрифту через font subsetting (harfbuzz).
  *
  * @param {Buffer} buf — оригінальний буфер шрифту (TTF/OTF/WOFF/WOFF2)
  * @returns {Promise<Buffer>} оптимізований буфер (або оригінал якщо більший)
@@ -32,30 +33,20 @@ export const optimizeFontBuffer = async (buf) => {
         return buf;
     }
 
-    // Тимчасові шляхи (Fontmin працює з файлами)
-    const tmpIn = path.join(__dirname, `.font-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const tmpOutDir = path.join(__dirname, `.font-out-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-
-    await fs.writeFile(tmpIn, buf);
-
-    const fontmin = new Fontmin()
-        .src(tmpIn)
-        .use(Fontmin.glyph({ text: CONFIG.font.subset }))  // залишити тільки потрібні гліфи
-        .dest(tmpOutDir);
-
-    await promisify(fontmin.run.bind(fontmin))();
-
-    const outFiles = await fs.readdir(tmpOutDir);
-    let out = buf;
-    if (outFiles.length) {
-        const first = path.join(tmpOutDir, outFiles[0]);
-        out = await fs.readFile(first);
+    if (!CONFIG.font.subset) {
+        return buf;
     }
 
-    // Cleanup тимчасових файлів
-    await fs.remove(tmpIn).catch(() => { });
-    await fs.remove(tmpOutDir).catch(() => { });
+    try {
+        // subset-font приймає Buffer і рядок з символами,
+        // повертає Buffer з тільки потрібними гліфами.
+        // The call intentionally omits targetFormat, so subset-font keeps woff/woff2/sfnt.
+        const out = await subsetFont(buf, CONFIG.font.subset);
 
-    // Повертаємо оптимізований тільки якщо він не більший
-    return out.length && out.length <= buf.length ? out : buf;
+        // Повертаємо оптимізований тільки якщо він не більший
+        return out.length && out.length <= buf.length ? out : buf;
+    } catch (e) {
+        console.warn('⚠️ Font subsetting failed, keeping original:', e.message);
+        return buf;
+    }
 };

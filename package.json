@@ -34,6 +34,7 @@
     "fs-extra": "^11.3.0",
     "lightningcss": "^1.30.2",
     "sharp": "^0.33.5",
+    "subset-font": "^2.5.0",
     "terser": "^5.39.0"
   },
   "optionalDependencies": {

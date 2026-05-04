@@ -14,10 +14,12 @@
 //   stats — підсумкова статистика для звіту в кінці збірки
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Лічильники загального розміру (до/після оптимізації) для фінального звіту */
+/** Статистика збірки */
 export const stats = {
-    totalOriginalSize: 0,   // Сума розмірів оригінальних файлів (bytes)
-    totalFinalSize: 0       // Сума розмірів після оптимізації (bytes)
+    originalHtmlSize: 0,       // Розмір оригінального HTML файлу (bytes)
+    totalAssetsOriginalSize: 0, // Сума розмірів оригінальних ассетів (bytes)
+    totalAssetsFinalSize: 0,    // Сума розмірів ассетів після оптимізації (bytes)
+    finalFileSize: 0           // Розмір фінального зібраного файлу (bytes)
 };
 
 /**
@@ -28,10 +30,22 @@ export const stats = {
 export const fileCache = new Map();
 
 /**
+ * In-flight cache for local files: absolute path -> Promise<data:URI>.
+ * This prevents parallel CSS/HTML replacements from optimizing the same asset
+ * multiple times before fileCache has a chance to be populated.
+ */
+export const filePromiseCache = new Map();
+
+/**
  * Кеш для data:URI: оригінальний data:URI → оптимізований data:URI.
  * Запобігає повторній обробці data:URI, які вже зустрічались.
  */
 export const dataUriCache = new Map();
+
+/**
+ * In-flight cache for data URIs: original data:URI -> Promise<optimized data:URI>.
+ */
+export const dataUriPromiseCache = new Map();
 
 /** Глобальний стан проєкту */
 export const state = {

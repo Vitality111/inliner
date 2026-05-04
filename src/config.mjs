@@ -199,7 +199,7 @@ export const CONFIG = {
          * Кожен +6 до CRF приблизно вдвічі зменшує бітрейт.
          * CLI: --crf=28
          */
-        crf: FLAGS.crf ?? 18,
+        crf: FLAGS.crf ?? 28,
 
         /**
          * Пресет кодування (ultrafast → veryslow).
@@ -231,7 +231,7 @@ export const CONFIG = {
          * null/0 — без масштабування (оригінальний розмір).
          * CLI: --maxWidth=540
          */
-        maxWidth: FLAGS.maxWidth ?? 1000,
+        maxWidth: FLAGS.maxWidth ?? 500,
 
         /**
          * Цільова частота кадрів (FPS).
@@ -306,18 +306,26 @@ export const CONFIG = {
         /**
          * Набір символів для font subsetting (тільки ці гліфи залишаться).
          * Зменшує розмір шрифту, видаляючи невикористані гліфи.
-         * За замовчуванням: латиниця + цифри.
-         * Якщо потрібна кирилиця — додай відповідні символи.
-         * Приклад: 'abcABC0123456789абвАБВ!?.,;:'
+         *
+         * Якщо не задано — авто-детект зі сторінки (pipeline.mjs).
+         * Приклад: --fontSubset='abcABC012...'
+         *
+         * ⚠️ УВАГА: subsetting може пошкодити гліфи у шрифтах
+         *    зі складними OpenType таблицями (GSUB/GPOS).
+         *    Перевіряйте результат для мов із спец-символами!
          * CLI: --fontSubset='abcABC012...'
          */
-        subset: FLAGS.fontSubset || 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789абвгґдеєжзиіїйклмнопрстуфхцчшщюяАБВГҐДЕЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЮЯ !?.,;:-_()[]{}<>@#$%^&*/\\|`~\'"+=⭐',
+        subset: FLAGS.fontSubset || '',
         /**
-         * Увімкнути/вимкнути стиснення шрифтів (fontmin).
-         * Варіативні шрифти (Variable Fonts) часто ламаються при subsetting.
-         * CLI: --optimizeFonts=false
+         * Увімкнути/вимкнути subsetting шрифтів (subset-font/harfbuzz).
+         *
+         * ⚠️ ВИМКНЕНО за замовчуванням — subsetting може пошкодити гліфи
+         * (навіть при наявності всіх символів, harfbuzz може ламати GSUB/GPOS таблиці).
+         *
+         * Увімкнути: --optimizeFonts
+         * CLI: --optimizeFonts / --optimizeFonts=false
          */
-        optimize: FLAGS.optimizeFonts !== false
+        optimize: !!FLAGS.optimizeFonts
     },
 
     // ──────────────── HTML ────────────────
