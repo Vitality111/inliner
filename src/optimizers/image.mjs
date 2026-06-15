@@ -36,6 +36,50 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
 /** Перевірка чи буфер є валідним PNG файлом */
 const isValidPng = (buf) => buf.length >= 8 && buf.subarray(0, 8).equals(PNG_MAGIC);
 
+/** Обмежує числовий параметр у безпечному діапазоні */
+const clampNumber = (value, min, max, fallback) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+
+/** Повертає стиснений буфер лише якщо він справді менший */
+const smallerOrOriginal = (original, optimized) =>
+    optimized?.length && optimized.length < original.length ? optimized : original;
+
+const getQualityFloor = (quality) => {
+    if (quality >= 95) return quality;
+    if (quality >= 80) return quality - 5;
+    if (quality >= 65) return quality - 8;
+    return quality;
+};
+
+const optimizeJpegBuffer = async (buf) => {
+    const quality = clampNumber(CONFIG.image.jpegQ, 1, 100, 70);
+    const out = await sharp(buf).jpeg({
+        quality,
+        mozjpeg: true,
+        trellisQuantisation: true,
+        overshootDeringing: true,
+        optimizeScans: true,
+        optimizeCoding: true,
+        chromaSubsampling: quality >= 80 ? '4:4:4' : '4:2:0'
+    }).toBuffer();
+
+    return smallerOrOriginal(buf, out);
+};
+
+const optimizeWebpBuffer = async (buf) => {
+    const quality = clampNumber(CONFIG.image.webpQ, 1, 100, 72);
+    const out = await sharp(buf).webp({
+        quality,
+        effort: 6,
+        smartSubsample: true,
+        nearLossless: quality >= 95
+    }).toBuffer();
+
+    return smallerOrOriginal(buf, out);
+};
+
 // ========================== PNG ==========================
 
 /**
@@ -70,9 +114,9 @@ export const optimizePngBuffer = async (buf) => {
     const tmpOut = `${tmpIn}.out.png`;
 
     // Валідація і clamping параметрів
-    const quality = Number.isFinite(CONFIG.image.pngQuality) ? Math.min(100, Math.max(0, CONFIG.image.pngQuality)) : 100;
-    const speed = Number.isFinite(CONFIG.image.pngLevel) ? Math.min(11, Math.max(1, CONFIG.image.pngLevel)) : 1;
-    const colors = Number.isFinite(CONFIG.image.pngColors) ? Math.min(256, Math.max(2, CONFIG.image.pngColors)) : 256;
+    const quality = clampNumber(CONFIG.image.pngQuality, 0, 100, 100);
+    const speed = clampNumber(CONFIG.image.pngLevel, 1, 11, 1);
+    const colors = clampNumber(CONFIG.image.pngColors, 2, 256, 256);
     const usePalette = !!CONFIG.image.pngPalette;
 
     // quality=100 — lossless режим, pngquant не потрібен
@@ -86,16 +130,17 @@ export const optimizePngBuffer = async (buf) => {
 
     await fs.writeFile(tmpIn, buf);
 
-    // pngquant --quality: простий діапазон 0-{quality}
-    // pngquant сам обирає оптимальне стиснення, quality — це стеля.
+    // pngquant --quality: діапазон min-max. Нижня межа захищає фото/градієнти
+    // від різкої деградації, коли pngquant міг би вибрати надто грубу палітру.
     //   80 = стиснення до прийнятної візуальної якості
     //   60 = агресивніше, помітна деградація на фото
-    //  100 = мінімальне lossy стиснення
-    // Якщо pngquant не може вписатись — retry без --quality (в catch нижче)
+    //  100 = lossless стиснення
+    // Якщо pngquant не може вписатись — переходимо до lossless fallback.
+    const minQuality = getQualityFloor(quality);
 
     // Формуємо аргументи pngquant
     const args = [
-        `--quality=0-${quality}`,        // стеля якості (pngquant сам обирає оптимум)
+        `--quality=${minQuality}-${quality}`,
         '--speed', String(speed),        // швидкість (1=найкраще, 11=найшвидше)
         '--force',                       // перезаписати вихідний файл
         '--strip',                       // видалити EXIF/метадані
@@ -121,7 +166,7 @@ export const optimizePngBuffer = async (buf) => {
         await runExternal(pngquantPath, args);
 
         // Якщо вихідний файл не з'явився — pngquant міг вирішити що quality
-        // недосяжна (exit code 99). Спробуємо без обмеження quality.
+        // недосяжна (exit code 99). Нижче піде безпечний lossless fallback.
         if (!await fs.pathExists(tmpOut)) {
             throw new Error('pngquant: output not created (likely quality not achievable)');
         }
@@ -131,41 +176,8 @@ export const optimizePngBuffer = async (buf) => {
         await fs.remove(tmpIn).catch(() => { });
         await fs.remove(tmpOut).catch(() => { });
 
-        // Повертаємо оптимізований тільки якщо він менший
-        return outBuf.length && outBuf.length < buf.length ? outBuf : buf;
+        return smallerOrOriginal(buf, outBuf);
     } catch (firstErr) {
-        // ─── Retry: pngquant без обмеження --quality ───
-        // pngquant часто фейлиться з exit code 99 коли діапазон якості
-        // занадто вузький для складних зображень (фото, градієнти).
-        // Повторюємо без --quality — pngquant сам визначить оптимальну якість.
-        try {
-            await fs.remove(tmpOut).catch(() => { });
-
-            const retryArgs = [
-                '--speed', String(speed),
-                '--force',
-                '--strip',
-                '--output', tmpOut,
-            ];
-            if (usePalette) retryArgs.push('--nofs');
-            if (colors >= 2 && colors < 256) retryArgs.push(String(colors));
-            retryArgs.push(tmpIn);
-
-            await runExternal(pngquantPath, retryArgs);
-
-            if (await fs.pathExists(tmpOut)) {
-                const outBuf = await fs.readFile(tmpOut);
-                await fs.remove(tmpIn).catch(() => { });
-                await fs.remove(tmpOut).catch(() => { });
-                if (outBuf.length && outBuf.length < buf.length) {
-                    console.log('   ↪ pngquant retry without --quality succeeded');
-                    return outBuf;
-                }
-            }
-        } catch {
-            // Retry теж не вдався — переходимо до sharp
-        }
-
         // ─── Fallback: sharp PNG ───
         console.warn('⚠️ pngquant skipped (fallback to sharp):', firstErr?.message || firstErr);
         await fs.remove(tmpIn).catch(() => { });
@@ -175,18 +187,7 @@ export const optimizePngBuffer = async (buf) => {
             // Спробуємо кілька стратегій sharp і виберемо найменший результат
             const candidates = [];
 
-            // Стратегія 1: palette mode з максимальним стисненням
-            try {
-                candidates.push(await sharp(buf).png({
-                    compressionLevel: 9,
-                    palette: true,
-                    quality,
-                    effort: 10,
-                    colors
-                }).toBuffer());
-            } catch { }
-
-            // Стратегія 2: без palette, максимальне стиснення
+            // Стратегія 1: без palette, максимальне lossless стиснення
             try {
                 candidates.push(await sharp(buf).png({
                     compressionLevel: 9,
@@ -195,7 +196,7 @@ export const optimizePngBuffer = async (buf) => {
                 }).toBuffer());
             } catch { }
 
-            // Стратегія 3: adaptive filtering
+            // Стратегія 2: adaptive filtering
             try {
                 candidates.push(await sharp(buf).png({
                     compressionLevel: 9,
@@ -203,6 +204,19 @@ export const optimizePngBuffer = async (buf) => {
                     effort: 10
                 }).toBuffer());
             } catch { }
+
+            // Стратегія 3: palette лише для явно агресивних налаштувань.
+            if (quality < 80 || colors < 256 || usePalette) {
+                try {
+                    candidates.push(await sharp(buf).png({
+                        compressionLevel: 9,
+                        palette: true,
+                        quality: minQuality,
+                        effort: 10,
+                        colors
+                    }).toBuffer());
+                } catch { }
+            }
 
             // Вибираємо найменший з кандидатів (який ще менший за оригінал)
             const best = candidates
@@ -274,10 +288,10 @@ export const optimizeGifBuffer = async (buf) => {
 export const optimizeImageBuffer = async (buf, mime) => {
     try {
         if (mime === 'image/jpeg') {
-            return await sharp(buf).jpeg({ quality: CONFIG.image.jpegQ }).toBuffer();
+            return await optimizeJpegBuffer(buf);
         }
         if (mime === 'image/webp') {
-            return await sharp(buf).webp({ quality: CONFIG.image.webpQ }).toBuffer();
+            return await optimizeWebpBuffer(buf);
         }
         if (mime === 'image/png') {
             return await optimizePngBuffer(buf);

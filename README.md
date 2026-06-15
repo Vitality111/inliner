@@ -128,13 +128,14 @@ You'll be prompted for each file:
 
 ### Image Optimization
 
-- `--jpegQ=<0-100>` — JPEG quality (default: 50)
-- `--webpQ=<0-100>` — WebP quality (default: 50)
+- `--jpegQ=<0-100>` — JPEG quality with mozjpeg optimization (default: 70)
+- `--webpQ=<0-100>` — WebP quality with high-effort encoding (default: 72)
 - `--pngLevel=<1-11>` — PNG compression speed, 1=best/slow, 11=fast/worse (default: 1)
-- `--pngQuality=<0-100>` — PNG quality (default: 80)
+- `--pngQuality=<0-100>` — PNG target quality; guarded range prevents severe photo/gradient degradation (default: 99)
+- `--pngColors=<2-256>` — PNG palette color count (default: 256)
 - `--pngPalette=<true|false>` — Disable dithering for smaller size (default: false)
-- `--gifLossy=<number>` — GIF lossy compression (default: 180)
-- `--gifColors=<1-256>` — GIF color count (default: 48)
+- `--gifLossy=<number>` — GIF lossy compression (default: 120)
+- `--gifColors=<1-256>` — GIF color count (default: 128)
 
 ### Video Optimization
 

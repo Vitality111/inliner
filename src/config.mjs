@@ -127,15 +127,16 @@ export const CONFIG = {
         pngLevel: FLAGS.pngLevel ?? 1,
 
         /**
-         * Максимальна якість PNG (0–100). Це стеля — pngquant сам обирає
-         * оптимальне стиснення в діапазоні 0–pngQuality.
+         * Цільова якість PNG (0–100). Для pngquant це безпечний діапазон
+         * навколо заданого значення, а не "0–quality", тому фото/градієнти
+         * не провалюються в дуже грубу палітру від зміни на кілька балів.
          *   80  = хороший баланс для плейблів
          *   60  = агресивніше, може бути помітно на фото/градієнтах
-         *  100  = мінімальне lossy стиснення
+         *  100  = lossless стиснення
          * Якщо 100 — pngquant не використовується, лише sharp lossless.
          * CLI: --pngQuality=80
          */
-        pngQuality: FLAGS.pngQuality ?? 99,
+        pngQuality: FLAGS.pngQuality ?? 80,
 
         /**
          * Кількість кольорів у палітрі PNG (2–256).
@@ -319,13 +320,20 @@ export const CONFIG = {
         /**
          * Увімкнути/вимкнути subsetting шрифтів (subset-font/harfbuzz).
          *
-         * ⚠️ ВИМКНЕНО за замовчуванням — subsetting може пошкодити гліфи
-         * (навіть при наявності всіх символів, harfbuzz може ламати GSUB/GPOS таблиці).
-         *
-         * Увімкнути: --optimizeFonts
+         * Увімкнено за замовчуванням, бо авто-детект subset нижче збирає символи
+         * з HTML/CSS/JS. Якщо у проєкті текст підвантажується динамічно ззовні,
+         * краще передати явний --fontSubset або вимкнути через --optimizeFonts=false.
          * CLI: --optimizeFonts / --optimizeFonts=false
          */
-        optimize: !!FLAGS.optimizeFonts
+        optimize: FLAGS.optimizeFonts !== false,
+
+        /**
+         * Формат вихідного шрифту при інлайні.
+         * woff2 дає найкраще стиснення і безпечний для data:URI, бо MIME теж
+         * оновлюється на font/woff2. Для optimizeOnly формат не змінюється.
+         * CLI: --fontFormat=woff2 / --fontFormat=woff / --fontFormat=preserve
+         */
+        format: FLAGS.fontFormat || 'woff2'
     },
 
     // ──────────────── HTML ────────────────

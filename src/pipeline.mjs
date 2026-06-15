@@ -23,7 +23,7 @@ import path from 'path';
 import { INPUT_FILE, FLAGS, OPT_EXTS, OPTIMIZE_ONLY, OVERRIDE_DIR_NAME, __dirname, CONFIG } from './config.mjs';
 import { setProjectRoot, stats } from './state.mjs';
 import { findFileRecursive, logSaving } from './utils.mjs';
-import { optimizeByMime } from './optimizers/index.mjs';
+import { optimizeAssetByMime } from './optimizers/index.mjs';
 import { MIME } from './constants.mjs';
 import { inlineCssLinks } from './processors/css.mjs';
 import { inlineJsScripts, processInlineScripts } from './processors/js.mjs';
@@ -158,7 +158,7 @@ export const optimizeAssetsFolderInPlace = async (assetsDirAbs) => {
 
         let outBuf = original;
         try {
-            outBuf = await optimizeByMime(original, mime);
+            outBuf = (await optimizeAssetByMime(original, mime, { allowFormatChange: false })).buffer;
         } catch { outBuf = original; }
 
         // Перезаписуємо файл тільки якщо реально менший

@@ -4,8 +4,9 @@
 // оптимізатору. Для файлових оптимізаторів (відео, аудіо, шрифти) створює
 // тимчасовий файл, бо ці інструменти працюють через файлову систему.
 //
-// Повертає оптимізований Buffer. Якщо оптимізація збільшила файл або
-// сталася помилка — повертає оригінальний буфер (safe fallback).
+// Повертає оптимізований Buffer разом із MIME. Це важливо для шрифтів/аудіо,
+// де оптимізація може змінити контейнер. Якщо оптимізація збільшила файл або
+// сталася помилка — повертає оригінальний буфер і MIME (safe fallback).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import fs from 'fs-extra';
@@ -17,7 +18,7 @@ import { optimizeImageBuffer } from './image.mjs';
 import { optimizeVideoFileToBuffer } from './video.mjs';
 import { optimizeAudioFileToBuffer } from './audio.mjs';
 import { optimizeGlbBuffer } from './gltf.mjs';
-import { optimizeFontBuffer } from './font.mjs';
+import { optimizeFontAsset } from './font.mjs';
 
 /**
  * Оптимізує буфер на основі його MIME типу.
@@ -27,30 +28,38 @@ import { optimizeFontBuffer } from './font.mjs';
  *   video/*           → ffmpeg (H.264 / VP9)
  *   audio/*           → ffmpeg (зберігає оригінальний формат)
  *   model/gltf-binary → gltfpack
- *   font/*            → fontmin (subsetting)
+ *   font/*            → subset-font (subsetting + optional WOFF2)
  *   інше              → без змін
  *
  * @param {Buffer} buf — вхідний буфер
  * @param {string} mime — MIME тип (наприклад 'image/png')
- * @returns {Promise<Buffer>} оптимізований буфер
+ * @param {Object} [options]
+ * @param {boolean} [options.allowFormatChange=true] — дозволити зміну контейнера
+ * @returns {Promise<{ buffer: Buffer, mime: string }>} оптимізований ассет
  */
-export const optimizeByMime = async (buf, mime) => {
+export const optimizeAssetByMime = async (buf, mime, options = {}) => {
     try {
         // ──── Зображення ────
         if (mime.startsWith('image/')) {
-            return await optimizeImageBuffer(buf, mime);
+            return { buffer: await optimizeImageBuffer(buf, mime), mime };
         }
 
         // ──── Відео ────
         // ffmpeg працює з файлами, тому створюємо тимчасовий файл.
         // Розширення важливе — ffmpeg визначає формат за ним.
         if (mime.startsWith('video/')) {
+            // WebM часто використовується для alpha-відео. Перекодування через
+            // ffmpeg може сплющити прозорість у чорний фон, тому лишаємо як є.
+            if (mime === 'video/webm') {
+                return { buffer: buf, mime };
+            }
+
             const ext = mime === 'video/webm' ? '.webm' : '.mp4';
             const tmpIn = path.join(os.tmpdir(), `builder-tmp-${Date.now()}-${sha1(buf)}${ext}`);
             await fs.writeFile(tmpIn, buf);
             try {
                 const out = await optimizeVideoFileToBuffer(tmpIn, mime);
-                return out.length && out.length < buf.length ? out : buf;
+                return { buffer: out.length && out.length < buf.length ? out : buf, mime };
             } finally {
                 await fs.remove(tmpIn).catch(() => { });
             }
@@ -67,7 +76,10 @@ export const optimizeByMime = async (buf, mime) => {
                 // Зберігає оригінальний формат (OGG→OGG, M4A→M4A, MP3→MP3)
                 const result = await optimizeAudioFileToBuffer(tmpIn, mime);
                 const out = result.buffer;
-                return out.length && out.length < buf.length ? out : buf;
+                if (out.length && out.length < buf.length) {
+                    return { buffer: out, mime: result.mime };
+                }
+                return { buffer: buf, mime };
             } finally {
                 await fs.remove(tmpIn).catch(() => { });
             }
@@ -75,18 +87,21 @@ export const optimizeByMime = async (buf, mime) => {
 
         // ──── 3D моделі (GLB/GLTF) ────
         if (mime === 'model/gltf-binary') {
-            return await optimizeGlbBuffer(buf);
+            return { buffer: await optimizeGlbBuffer(buf), mime };
         }
 
         // ──── Шрифти ────
-        if (mime.startsWith('font/')) {
-            return await optimizeFontBuffer(buf);
+        if (mime.startsWith('font/') || mime.startsWith('application/font-') || mime === 'application/x-font-ttf' || mime === 'application/x-font-otf') {
+            return await optimizeFontAsset(buf, mime, options);
         }
 
         // ──── Інше — без змін ────
-        return buf;
+        return { buffer: buf, mime };
     } catch (e) {
         // Safe fallback: при будь-якій помилці повертаємо оригінал
-        return buf;
+        return { buffer: buf, mime };
     }
 };
+
+export const optimizeByMime = async (buf, mime, options = {}) =>
+    (await optimizeAssetByMime(buf, mime, options)).buffer;

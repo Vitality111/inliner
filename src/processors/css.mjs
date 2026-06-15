@@ -18,6 +18,28 @@ import { processUri } from '../encoder.mjs';
 import { CONFIG } from '../config.mjs';
 import { transform as cssTransform } from 'lightningcss';
 
+const FONT_FORMAT_BY_DATA_MIME = {
+    'font/woff2': 'woff2',
+    'font/woff': 'woff',
+    'font/ttf': 'truetype',
+    'font/otf': 'opentype'
+};
+
+const normalizeFontFaceFormats = (cssText) => {
+    return cssText.replace(/@font-face\s*\{[^}]*\}/gis, (block) => {
+        const match = /data:(font\/(?:woff2?|ttf|otf))\s*;base64,/i.exec(block);
+        if (!match) return block;
+
+        const format = FONT_FORMAT_BY_DATA_MIME[match[1].toLowerCase()];
+        if (!format) return block;
+
+        return block.replace(
+            /format\(\s*(['"]?)(?:woff2?|truetype|opentype|ttf|otf)\1\s*\)/gi,
+            `format('${format}')`
+        );
+    });
+};
+
 /**
  * Обробляє CSS контент: знаходить всі url() та @import і
  * замінює шляхи на data:URI через processUri.
@@ -83,7 +105,7 @@ export const processCssContent = async (cssText, baseDir) => {
         }
     );
 
-    return cssText;
+    return normalizeFontFaceFormats(cssText);
 };
 
 /**

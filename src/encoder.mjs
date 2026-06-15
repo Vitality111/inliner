@@ -14,7 +14,7 @@ import path from 'path';
 import { decodeLocalPath, isHttp, isDataUri, logSaving, askCompress } from './utils.mjs';
 import { CONFIG, OVERRIDE_DIR_NAME, INTERACTIVE } from './config.mjs';
 import { state, dataUriCache, dataUriPromiseCache, fileCache, filePromiseCache } from './state.mjs';
-import { optimizeByMime } from './optimizers/index.mjs';
+import { optimizeAssetByMime } from './optimizers/index.mjs';
 import { MIME } from './constants.mjs';
 
 // ========================== DATA URI UTILS ==========================
@@ -83,11 +83,12 @@ const reencodeDataUriUncached = async (dataUri) => {
         return dataUri;
     }
 
-    const optimized = await optimizeByMime(buffer, mime);
+    const optimized = await optimizeAssetByMime(buffer, mime);
 
     // Якщо оптимізований більший — повертаємо оригінал (захист від збільшення)
-    const finalBuf = optimized.length <= buffer.length ? optimized : buffer;
-    const out = toDataUri(mime, finalBuf);
+    const finalBuf = optimized.buffer.length <= buffer.length ? optimized.buffer : buffer;
+    const finalMime = finalBuf === optimized.buffer ? optimized.mime : mime;
+    const out = toDataUri(finalMime, finalBuf);
     logSaving(`data:${mime}`, before, finalBuf.length);
     dataUriCache.set(dataUri, out);
     return out;
@@ -122,7 +123,7 @@ const encodeFileUncached = async (fileAbsPath) => {
     if (fileCache.has(fileAbsPath)) return fileCache.get(fileAbsPath);
 
     const ext = path.extname(fileAbsPath).toLowerCase();
-    const mime = MIME[ext] || 'application/octet-stream';
+    let mime = MIME[ext] || 'application/octet-stream';
     const original = await fs.readFile(fileAbsPath);
     const before = original.length;
     let outBuf = original;
@@ -134,7 +135,9 @@ const encodeFileUncached = async (fileAbsPath) => {
 
     if (shouldCompress) {
         try {
-            outBuf = await optimizeByMime(original, mime);
+            const optimized = await optimizeAssetByMime(original, mime);
+            outBuf = optimized.buffer;
+            mime = optimized.mime;
         } catch {
             outBuf = original;
         }
@@ -144,7 +147,8 @@ const encodeFileUncached = async (fileAbsPath) => {
     const finalBuf = outBuf.length <= original.length ? outBuf : original;
     logSaving(path.basename(fileAbsPath), before, finalBuf.length);
 
-    const dataUri = toDataUri(mime, finalBuf);
+    const finalMime = finalBuf === outBuf ? mime : MIME[ext] || 'application/octet-stream';
+    const dataUri = toDataUri(finalMime, finalBuf);
     fileCache.set(fileAbsPath, dataUri);
 
     // Також кешуємо в dataUriCache — щоб reencodeAllDataUrisInHtml
@@ -193,12 +197,13 @@ export const fetchAndEncode = async (url) => {
         }
 
         const before = buf.length;
-        const optimized = await optimizeByMime(buf, mime);
+        const optimized = await optimizeAssetByMime(buf, mime);
 
         // ✅ FIX: перевіряємо чи оптимізований менший за оригінал
-        const finalBuf = optimized.length <= buf.length ? optimized : buf;
+        const finalBuf = optimized.buffer.length <= buf.length ? optimized.buffer : buf;
+        const finalMime = finalBuf === optimized.buffer ? optimized.mime : mime;
         logSaving(url, before, finalBuf.length);
-        return toDataUri(mime, finalBuf);
+        return toDataUri(finalMime, finalBuf);
     } catch {
         return null;
     }
