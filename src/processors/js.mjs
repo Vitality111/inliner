@@ -43,7 +43,7 @@ export const processJsContent = async (jsText, baseDir) => {
     // Замінюємо ВСІ рядкові шляхи до файлів на data:URI
     jsText = await replaceAsync(
         jsText,
-        /(["'`])([^"'`]*?\.(?:png|jpe?g|gif|svg|webp|mp4|webm|mp3|m4a|wav|ogg|json|txt|wasm|glb|woff2?|ttf|otf)(?:\?[^"'`#]*)?(?:#[^"'`]*)?|data:[^"'`]+?)\1/gi,
+        /(["'`])([^"'`]*?\.(?:png|jpe?g|gif|svg|webp|avif|bmp|ico|mp4|webm|mp3|m4a|wav|ogg|json|txt|wasm|glb|woff2?|ttf|otf)(?:\?[^"'`#]*)?(?:#[^"'`]*)?|data:[^"'`]+?)\1/gi,
         async (match, quote, pth) => {
             const replaced = await processUri(pth, baseDir);
             return `${quote}${replaced}${quote}`;

@@ -19,6 +19,9 @@ export const MIME = {
     '.gif': 'image/gif',
     '.svg': 'image/svg+xml',
     '.webp': 'image/webp',
+    '.avif': 'image/avif',
+    '.bmp': 'image/bmp',
+    '.ico': 'image/x-icon',
 
     // ──── Відео ────
     '.mp4': 'video/mp4',

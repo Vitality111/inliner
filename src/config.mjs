@@ -343,7 +343,14 @@ export const CONFIG = {
          * ⚠️ М'яка мініфікація — не чіпає вміст <script>/<style>.
          * CLI: --minifyHtml
          */
-        minify: !!FLAGS.minifyHtml
+        minify: !!FLAGS.minifyHtml,
+
+        /**
+         * Додати випадкові неактивні класи-шум до HTML. Оригінальні класи,
+         * CSS і JavaScript не змінюються. Використовується командою codeCSS.
+         * CLI: --codeCSS
+         */
+        addClassNoise: !!FLAGS.codeCSS
     },
 
     // ──────────────── ЗОВНІШНІ РЕСУРСИ ────────────────

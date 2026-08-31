@@ -6,7 +6,8 @@
 // Порядок обробки в pipeline.mjs:
 //   1. inlineCssLinks       — <link rel="stylesheet"> → <style>
 //   2. inlineJsScripts      — <script src="..."> → <script>inline</script>
-//   3. inlineHtmlMediaAttrs — src, poster, data-src, background → data:URI
+//   3. inlineHtmlMediaAttrs — src, poster, data-src, data-port, data-land,
+//                              background → data:URI
 //   4. inlineSrcset          — srcset → data:URI
 //   5. inlineStylesEverywhere — <style> і style="" → url() → data:URI
 //   6. reencodeAllDataUrisInHtml — повторна оптимізація всіх data:URI
@@ -21,7 +22,38 @@ import { CONFIG } from '../config.mjs';
 // ========================== MEDIA ATTRIBUTES ==========================
 
 /**
- * Інлайнить медіа-атрибути в HTML тегах: src, poster, data-src, background.
+ * Переносить lazy-source з data-src у стандартний src для <img>, які не
+ * мають власного src. Після інлайну lazy-loading уже не економить мережеві
+ * запити, зате <img> без src не проходить валідацію частини рекламних мереж.
+ *
+ * data-src видаляється, щоб не дублювати великий base64 у фінальному HTML.
+ * Якщо валідний src уже є, тег не змінюється і lazy-loading зберігається.
+ *
+ * @param {string} html — HTML з уже інлайненими data-src
+ * @returns {string} HTML без <img data-src> з відсутнім/порожнім src
+ */
+export const promoteImgDataSrc = (html) => html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const dataSrcMatch = /\sdata-src\s*=\s*(["'])([^"']+)\1/i.exec(tag);
+    if (!dataSrcMatch) return tag;
+
+    const srcMatch = /\ssrc\s*=\s*(["'])([^"']*)\1/i.exec(tag);
+    if (srcMatch?.[2]?.trim()) return tag;
+
+    const dataSrc = dataSrcMatch[2];
+    let normalized = tag.replace(dataSrcMatch[0], '');
+
+    if (srcMatch) {
+        normalized = normalized.replace(/\ssrc\s*=\s*(["'])\s*\1/i, ` src="${dataSrc}"`);
+    } else {
+        normalized = normalized.replace(/^<img\b/i, (opening) => `${opening} src="${dataSrc}"`);
+    }
+
+    return normalized;
+});
+
+/**
+ * Інлайнить медіа-атрибути в HTML тегах:
+ * src, poster, data-src, data-port, data-land, background.
  * Кожне значення обробляється через processUri (optimize + base64).
  *
  * ⚠️ Виключаємо <script> теги — вони вже оброблені inlineJsScripts.
@@ -38,6 +70,8 @@ export const inlineHtmlMediaAttrs = async (html, basePath) => {
         /(<(?!script[\s>])[^>]*?)\s(src)=["']([^"']+)["']/gi,
         /\s(poster)=["']([^"']+)["']/gi,
         /\s(data-src)=["']([^"']+)["']/gi,
+        /\s(data-port)=["']([^"']+)["']/gi,
+        /\s(data-land)=["']([^"']+)["']/gi,
         /\s(background)=["']([^"']+)["']/gi
     ];
 
@@ -55,7 +89,7 @@ export const inlineHtmlMediaAttrs = async (html, basePath) => {
         });
     }
 
-    return html;
+    return promoteImgDataSrc(html);
 };
 
 // ========================== SRCSET ==========================

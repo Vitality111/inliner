@@ -7,7 +7,9 @@
     "node": ">=18"
   },
   "scripts": {
+    "test": "node test/all.test.mjs",
     "minify": "node inline.mjs --minifyJs=true --minifyCss=true --minifyHtml=true",
+    "codeCSS": "node inline.mjs --minifyJs=true --minifyCss=true --minifyHtml=true --codeCSS=true",
     "build": "node inline.mjs",
     "optimize": "node inline.mjs --optimizeOnly=true --assetsDir=assets",
     "deinline": "node inline.mjs --deinline --"

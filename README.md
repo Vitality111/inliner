@@ -12,6 +12,7 @@ Build single-file HTML5 playables by bundling ES modules and inlining all assets
 - **External Resource Fetching** — Optionally fetch and inline HTTP/HTTPS resources
 - **Asset Overrides** — Replace assets from a `dir/` folder with relative-path priority
 - **Optimize-Only Mode** — Compress assets in-place without building HTML
+- **Warn-Only Preflight** — Report static asset URLs that remain non-inlined without blocking the build
 
 ## Requirements
 
@@ -62,6 +63,15 @@ node inline.mjs index.html
 node inline.mjs index.html --minifyJs --minifyCss --minifyHtml
 ```
 
+### Minification With HTML Class Noise
+
+Adds random inactive classes to elements that already have classes. Existing
+HTML classes, CSS rules, and JavaScript are not renamed or rewritten.
+
+```bash
+npm run codeCSS index.html
+```
+
 ### Fetch External Resources
 
 ```bash
@@ -82,6 +92,7 @@ node inline.mjs --optimizeOnly --assetsDir=assets
 - `--optimizeOnly` — Only optimize assets in `--assetsDir`, skip HTML build
 - `--assetsDir=<path>` — Path to assets folder (for optimize-only mode)
 - `--interactive` or `--i` — Interactive mode: choose which files to compress
+- `--codeCSS` — Add two random inactive classes to each element that already has a class
 
 ### Interactive Mode
 
@@ -209,6 +220,7 @@ Generates `dist/<filename>.html` with all assets inlined and optimized.
 
 ```bash
 npm run minify <file>    # Build with full minification
+npm run codeCSS <file>   # Minify and add random inactive HTML classes
 npm run build <file>     # Build without minification
 npm run optimize         # Optimize assets in ./assets folder
 ```

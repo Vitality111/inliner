@@ -16,6 +16,7 @@ import { CONFIG, OVERRIDE_DIR_NAME, INTERACTIVE } from './config.mjs';
 import { state, dataUriCache, dataUriPromiseCache, fileCache, filePromiseCache } from './state.mjs';
 import { optimizeAssetByMime } from './optimizers/index.mjs';
 import { MIME } from './constants.mjs';
+import { detectMimeFromBuffer } from './mime.mjs';
 
 // ========================== DATA URI UTILS ==========================
 
@@ -74,13 +75,19 @@ const reencodeDataUriUncached = async (dataUri) => {
     const parsed = fromDataUri(dataUri);
     if (!parsed) return dataUri;
 
-    const { mime, buffer } = parsed;
+    const { mime: declaredMime, buffer } = parsed;
+    const mime = detectMimeFromBuffer(buffer, declaredMime);
+    if (mime !== declaredMime) {
+        console.warn(`⚠️ MIME corrected for data URI: ${declaredMime} → ${mime}`);
+    }
     const before = buffer.length;
 
     // В інтерактивному режимі не перекодовуємо data:URI повторно
     if (INTERACTIVE) {
-        dataUriCache.set(dataUri, dataUri);
-        return dataUri;
+        // MIME все одно виправляємо: це не стискання і не змінює байти ассета.
+        const corrected = mime === declaredMime ? dataUri : toDataUri(mime, buffer);
+        dataUriCache.set(dataUri, corrected);
+        return corrected;
     }
 
     const optimized = await optimizeAssetByMime(buffer, mime);
@@ -123,8 +130,12 @@ const encodeFileUncached = async (fileAbsPath) => {
     if (fileCache.has(fileAbsPath)) return fileCache.get(fileAbsPath);
 
     const ext = path.extname(fileAbsPath).toLowerCase();
-    let mime = MIME[ext] || 'application/octet-stream';
+    const extensionMime = MIME[ext] || 'application/octet-stream';
     const original = await fs.readFile(fileAbsPath);
+    let mime = detectMimeFromBuffer(original, extensionMime);
+    if (mime !== extensionMime) {
+        console.warn(`⚠️ MIME corrected for ${path.basename(fileAbsPath)}: ${extensionMime} → ${mime}`);
+    }
     const before = original.length;
     let outBuf = original;
 
@@ -147,7 +158,7 @@ const encodeFileUncached = async (fileAbsPath) => {
     const finalBuf = outBuf.length <= original.length ? outBuf : original;
     logSaving(path.basename(fileAbsPath), before, finalBuf.length);
 
-    const finalMime = finalBuf === outBuf ? mime : MIME[ext] || 'application/octet-stream';
+    const finalMime = finalBuf === outBuf ? mime : detectMimeFromBuffer(original, extensionMime);
     const dataUri = toDataUri(finalMime, finalBuf);
     fileCache.set(fileAbsPath, dataUri);
 
@@ -190,10 +201,14 @@ export const fetchAndEncode = async (url) => {
         const buf = Buffer.from(arrBuf);
 
         // Визначаємо MIME з заголовків або розширення URL
-        let mime = res.headers.get('content-type')?.split(';')[0]?.trim() || '';
-        if (!mime) {
+        let declaredMime = res.headers.get('content-type')?.split(';')[0]?.trim() || '';
+        if (!declaredMime) {
             const ext = path.extname(new URL(url).pathname).toLowerCase();
-            mime = MIME[ext] || 'application/octet-stream';
+            declaredMime = MIME[ext] || 'application/octet-stream';
+        }
+        const mime = detectMimeFromBuffer(buf, declaredMime);
+        if (mime !== declaredMime) {
+            console.warn(`⚠️ MIME corrected for ${url}: ${declaredMime} → ${mime}`);
         }
 
         const before = buf.length;

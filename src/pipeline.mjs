@@ -25,9 +25,12 @@ import { setProjectRoot, stats } from './state.mjs';
 import { findFileRecursive, logSaving } from './utils.mjs';
 import { optimizeAssetByMime } from './optimizers/index.mjs';
 import { MIME } from './constants.mjs';
+import { detectMimeFromBuffer } from './mime.mjs';
 import { inlineCssLinks } from './processors/css.mjs';
 import { inlineJsScripts, processInlineScripts } from './processors/js.mjs';
 import { inlineHtmlMediaAttrs, inlineSrcset, inlineStylesEverywhere, reencodeAllDataUrisInHtml, maybeMinifyHtml } from './processors/html.mjs';
+import { addDecoyHtmlClasses } from './processors/html-noise.mjs';
+import { warnAboutUninlinedAssets } from './validation.mjs';
 
 // ========================== FILESYSTEM WALKER ==========================
 
@@ -152,8 +155,12 @@ export const optimizeAssetsFolderInPlace = async (assetsDirAbs) => {
         const ext = path.extname(fileAbsPath).toLowerCase();
         if (!OPT_EXTS.has(ext)) continue;
 
-        const mime = MIME[ext] || 'application/octet-stream';
         const original = await fs.readFile(fileAbsPath);
+        const extensionMime = MIME[ext] || 'application/octet-stream';
+        const mime = detectMimeFromBuffer(original, extensionMime);
+        if (mime !== extensionMime) {
+            console.warn(`⚠️ MIME corrected for ${path.basename(fileAbsPath)}: ${extensionMime} → ${mime}`);
+        }
         const before = original.length;
 
         let outBuf = original;
@@ -228,6 +235,19 @@ export const inlineHtml = async () => {
     html = await inlineStylesEverywhere(html, basePath);   // 5. style url() → data:URI
     html = await reencodeAllDataUrisInHtml(html);          // 6. re-optimize всіх data:URI
     html = maybeMinifyHtml(html);                          // 7. minify HTML (text content)
+    if (CONFIG.html.addClassNoise) {                       // 8. optional HTML class noise
+        const beforeNoise = Buffer.byteLength(html, 'utf8');
+        const noise = addDecoyHtmlClasses(html);
+        html = noise.html;
+
+        if (noise.skippedReason) {
+            console.warn(`⚠️ codeCSS skipped for safety: ${noise.skippedReason}`);
+        } else {
+            const addedBytes = Buffer.byteLength(html, 'utf8') - beforeNoise;
+            console.log(`🔐 codeCSS: added ${noise.addedClasses} decoy classes to ${noise.changedElements} elements (+${addedBytes} bytes)`);
+        }
+    }
+    warnAboutUninlinedAssets(html);                        // 9. warn-only preflight
 
     // Зауваження: Вбудовані <script> та <style> тепер мініфікуються
     // на кроках 2a (processInlineScripts) та 5 (inlineStylesEverywhere).
