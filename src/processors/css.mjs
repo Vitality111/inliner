@@ -53,13 +53,17 @@ const normalizeFontFaceFormats = (cssText) => {
 export const processCssContent = async (cssText, baseDir) => {
     /**
      * Знімає CSS-escape з шляхів.
-     * Наприклад: font\ file.woff → font file.woff
-     *            path\/to\/file   → path/to/file
+     * Наприклад: font\ file.woff              → font file.woff
+     *            path\/to\/file                → path/to/file
+     *            Roboto-VariableFont_wdth\,wght → Roboto-VariableFont_wdth,wght
+     *
+     * За специфікацією CSS бекслеш екранує будь-який символ, тому знімаємо
+     * його перед усіма НЕ буквено-цифровими символами (кома, дужки, лапки,
+     * пробіл, слеш, сам бекслеш). Літери/цифри не чіпаємо, щоб не зламати
+     * шляхи виду dir\assets.
      */
     const unescapeCssPath = (s) =>
-        s
-            .replace(/\\([()'"\s/\\])/g, '$1')   // зняти бекслеш перед спецсимволами
-            .replace(/\\\\/g, '\\');              // подвійний бекслеш → одинарний
+        String(s).replace(/\\([^A-Za-z0-9])/g, '$1');
 
     // ──── 1) url(...) — основний CSS-ресурсний синтаксис ────
     // Підтримує три варіанти: url("..."), url('...'), url(...)

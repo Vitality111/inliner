@@ -113,13 +113,23 @@ export const optimizePngBuffer = async (buf) => {
     const tmpIn = path.join(__dirname, `.tmp-png-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
     const tmpOut = `${tmpIn}.out.png`;
 
-    // Валідація і clamping параметрів
-    const quality = clampNumber(CONFIG.image.pngQuality, 0, 100, 100);
-    const speed = clampNumber(CONFIG.image.pngLevel, 1, 11, 1);
+    // Валідація і clamping параметрів.
+    //
+    // ⚠️ Ключове про pngquant: верхня межа --quality — це ЦІЛЬ, під яку він
+    // добирає МІНІМАЛЬНУ кількість кольорів ("least amount of colors required
+    // to meet or exceed the max quality"). Тому --quality=75-80 легко з'їдає
+    // фото до 10–20 кольорів, і зображення виглядає безколірним, навіть коли
+    // pngColors=256 (це лише стеля палітри, а не її мінімум).
+    //
+    //   quality — НИЖНЯ межа: мінімально прийнятна якість (нижче → fallback)
+    //   target  — ВЕРХНЯ межа: ціль, що керує розміром палітри (100 = не ріже)
+    const quality = clampNumber(CONFIG.image.pngQuality, 0, 100, 80);
+    const target = Math.max(quality, clampNumber(CONFIG.image.pngTarget, 1, 100, 100));
+    const speed = clampNumber(CONFIG.image.pngLevel, 1, 11, 3);
     const colors = clampNumber(CONFIG.image.pngColors, 2, 256, 256);
     const usePalette = !!CONFIG.image.pngPalette;
 
-    // quality=100 — lossless режим, pngquant не потрібен
+    // pngQuality=100 — lossless режим, pngquant не потрібен
     if (quality >= 100) {
         return await sharp(buf).png({
             compressionLevel: 9,
@@ -130,17 +140,15 @@ export const optimizePngBuffer = async (buf) => {
 
     await fs.writeFile(tmpIn, buf);
 
-    // pngquant --quality: діапазон min-max. Нижня межа захищає фото/градієнти
-    // від різкої деградації, коли pngquant міг би вибрати надто грубу палітру.
-    //   80 = стиснення до прийнятної візуальної якості
-    //   60 = агресивніше, помітна деградація на фото
-    //  100 = lossless стиснення
-    // Якщо pngquant не може вписатись — переходимо до lossless fallback.
-    const minQuality = getQualityFloor(quality);
-
+    // pngquant --quality=<min>-<target>:
+    //   min    — якщо результат гірший, pngquant виходить з кодом 99
+    //             і ми переходимо на безпечний lossless fallback (sharp)
+    //   target — ціль, під яку добирається розмір палітри:
+    //             100 = палітра не ріжеться (кольори збережені, файл більший)
+    //              80 = агресивно, палітра може впасти до кількох кольорів
     // Формуємо аргументи pngquant
     const args = [
-        `--quality=${minQuality}-${quality}`,
+        `--quality=${quality}-${target}`,
         '--speed', String(speed),        // швидкість (1=найкраще, 11=найшвидше)
         '--force',                       // перезаписати вихідний файл
         '--strip',                       // видалити EXIF/метадані
@@ -153,9 +161,10 @@ export const optimizePngBuffer = async (buf) => {
         args.push('--nofs');
     }
 
-    // Кількість кольорів у палітрі (2–256)
-    // Завжди передаємо якщо менше 256 (256 = дефолт pngquant)
-    if (colors >= 2 && colors < 256) {
+    // Кількість кольорів у палітрі (2–256) — жорстка СТЕЛЯ.
+    // Передаємо завжди, включно з 256: у парі з --quality=…-100 це і є
+    // гарантія, що палітра залишиться повною.
+    if (colors >= 2 && colors <= 256) {
         args.push(String(colors));
     }
 
@@ -206,12 +215,12 @@ export const optimizePngBuffer = async (buf) => {
             } catch { }
 
             // Стратегія 3: palette лише для явно агресивних налаштувань.
-            if (quality < 80 || colors < 256 || usePalette) {
+            if (target < 90 || colors < 256 || usePalette) {
                 try {
                     candidates.push(await sharp(buf).png({
                         compressionLevel: 9,
                         palette: true,
-                        quality: minQuality,
+                        quality: quality,
                         effort: 10,
                         colors
                     }).toBuffer());
