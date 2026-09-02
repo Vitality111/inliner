@@ -125,6 +125,10 @@ export const findUninlinedAssetReferences = (html) => {
                 // href у <a> є навігацією і навмисно ігнорується. href у <link>
                 // завантажує stylesheet/icon/preload, тому це посилання на асет.
                 addReferenceIssue(issues, '<link>', 'href', value);
+            } else if (tagName === 'object' && name === 'data') {
+                addReferenceIssue(issues, '<object>', 'data', value);
+            } else if (tagName === 'image' && (name === 'href' || name === 'xlink:href')) {
+                addReferenceIssue(issues, '<image>', name, value);
             }
         }
     }

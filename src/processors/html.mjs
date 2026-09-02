@@ -14,7 +14,9 @@
 //   7. maybeMinifyHtml      — видалення коментарів і зайвих пробілів
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { replaceAsync } from '../utils.mjs';
+import fs from 'fs-extra';
+import path from 'path';
+import { replaceAsync, decodeLocalPath, isHttp, isDataUri } from '../utils.mjs';
 import { processUri, reencodeDataUri } from '../encoder.mjs';
 import { processCssContent, maybeMinifyCss } from './css.mjs';
 import { CONFIG } from '../config.mjs';
@@ -72,7 +74,11 @@ export const inlineHtmlMediaAttrs = async (html, basePath) => {
         /\s(data-src)=["']([^"']+)["']/gi,
         /\s(data-port)=["']([^"']+)["']/gi,
         /\s(data-land)=["']([^"']+)["']/gi,
-        /\s(background)=["']([^"']+)["']/gi
+        /\s(background)=["']([^"']+)["']/gi,
+        // <object data="file.svg"> — вбудований документ/зображення
+        /(<object\b[^>]*?)\s(data)=["']([^"']+)["']/gi,
+        // <image href> / <image xlink:href> всередині інлайнового <svg>
+        /(<image\b[^>]*?)\s(href|xlink:href)=["']([^"']+)["']/gi
     ];
 
     // Окремо обробляємо src (з перевіркою на script)
@@ -82,14 +88,77 @@ export const inlineHtmlMediaAttrs = async (html, basePath) => {
     });
 
     // Решта атрибутів — без спеціальних перевірок
-    for (let i = 1; i < attrPatterns.length; i++) {
+    for (let i = 1; i < attrPatterns.length - 2; i++) {
         html = await replaceAsync(html, attrPatterns[i], async (_, attr, val) => {
             const replaced = await processUri(val, basePath);
             return ` ${attr}="${replaced}"`;
         });
     }
 
+    // Атрибути, прив'язані до конкретного тега (object[data], image[href])
+    for (const pattern of attrPatterns.slice(-2)) {
+        html = await replaceAsync(html, pattern, async (_, tagStart, attr, val) => {
+            const replaced = await processUri(val, basePath);
+            return `${tagStart} ${attr}="${replaced}"`;
+        });
+    }
+
+    html = await inlineLinkAssets(html, basePath);
+
     return promoteImgDataSrc(html);
+};
+
+// ========================== <link> ASSETS ==========================
+
+/**
+ * Обробляє <link> теги, які не є stylesheet (ті вже інлайнені у <style>):
+ *
+ *   rel="icon" / "shortcut icon" / "apple-touch-icon" / "manifest"
+ *       → href інлайниться як data:URI
+ *
+ *   rel="preload" / "prefetch" / "modulepreload" на ЛОКАЛЬНИЙ ассет
+ *       → тег видаляється. Ассет уже вшитий у файл, тому preload лишається
+ *         мертвим мережевим запитом на неіснуючий шлях (і попередженням
+ *         від preflight). Зовнішні (http) preload не чіпаємо.
+ *
+ * @param {string} html
+ * @param {string} basePath
+ * @returns {Promise<string>}
+ */
+export const inlineLinkAssets = async (html, basePath) => {
+    return await replaceAsync(
+        html,
+        /<link\b[^>]*>/gi,
+        async (tag) => {
+            const relMatch = /\srel\s*=\s*["']?([^"'>]+)["']?/i.exec(tag);
+            const hrefMatch = /\shref\s*=\s*(["'])([^"']+)\1/i.exec(tag);
+            if (!relMatch || !hrefMatch) return tag;
+
+            const rels = relMatch[1].toLowerCase().split(/\s+/);
+            const href = hrefMatch[2];
+            if (isDataUri(href)) return tag;
+
+            // stylesheet обробляється в inlineCssLinks
+            if (rels.includes('stylesheet')) return tag;
+
+            const isPreload = rels.some(r => r === 'preload' || r === 'prefetch' || r === 'modulepreload');
+            if (isPreload) {
+                if (isHttp(href)) return tag;
+                const full = path.resolve(basePath, decodeLocalPath(href));
+                // локальний файл існує → він буде/вже інлайнений → preload зайвий
+                return (await fs.pathExists(full)) ? '' : tag;
+            }
+
+            const isIconLike = rels.some(r =>
+                r === 'icon' || r === 'shortcut' || r === 'apple-touch-icon' ||
+                r === 'apple-touch-icon-precomposed' || r === 'manifest' || r === 'mask-icon'
+            );
+            if (!isIconLike) return tag;
+
+            const replaced = await processUri(href, basePath);
+            return tag.replace(hrefMatch[0], ` href=${hrefMatch[1]}${replaced}${hrefMatch[1]}`);
+        }
+    );
 };
 
 // ========================== SRCSET ==========================
@@ -208,8 +277,11 @@ export const maybeMinifyHtml = (html) => {
     // Видаляємо HTML-коментарі
     html = html.replace(/<!--([\s\S]*?)-->/g, '');
 
-    // Стискаємо пробіли між тегами
-    html = html.replace(/>\s+</g, '><');
+    // Стискаємо пробіли між тегами до ОДНОГО пробілу, а не до нуля.
+    // `><` ламав текст між інлайновими елементами:
+    //   <span>Tap</span> <span>to play</span>  →  "Tapto play"
+    // Один пробіл між тегами коштує ~1 байт на пару тегів і зберігає семантику.
+    html = html.replace(/>\s+</g, '> <');
 
     return html;
 };
