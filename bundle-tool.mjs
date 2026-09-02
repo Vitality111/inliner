@@ -20,7 +20,7 @@ try {
             'fs-extra',
             'sharp',
             'fluent-ffmpeg',
-            'fontmin',
+            'subset-font',
             'lightningcss',
             'esbuild',
             // 'gifsicle' is run via child_process, not imported, but good to note

@@ -122,7 +122,11 @@ export const findFileRecursive = async (targetFile, startDir) => {
     for (const entry of entries) {
         const fullPath = path.join(startDir, entry.name);
         if (entry.isDirectory()) {
-            if (entry.name === 'node_modules' || entry.name === '.git') continue;
+            // dist/ і bin/ — це вихідні папки збірки. У dist лежить файл з тою ж
+            // назвою, що й вихідний HTML, і без цього виключення інлайнер міг
+            // підхопити вже зібраний білд замість джерела.
+            if (entry.name === 'node_modules' || entry.name === '.git' ||
+                entry.name === 'dist' || entry.name === 'bin') continue;
             const result = await findFileRecursive(targetFile, fullPath);
             if (result) return result;
         } else if (entry.name === targetFile) {

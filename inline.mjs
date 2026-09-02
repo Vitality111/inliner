@@ -7,7 +7,7 @@
 // як оптимізовані data:URI.
 //
 // Вимоги: Node 18+, ffmpeg у PATH
-// Пакети:  fs-extra, sharp, fluent-ffmpeg, fontmin, esbuild, lightningcss
+// Пакети:  fs-extra, sharp, fluent-ffmpeg, subset-font, esbuild, lightningcss
 //
 // Запуск:
 //   node inline.mjs index.html

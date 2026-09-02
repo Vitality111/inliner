@@ -1,7 +1,7 @@
 {
   "name": "inline-builder",
   "version": "2.1.0",
-  "description": "Build single-file HTML5 playables by bundling ES modules (esbuild) and inlining CSS/JS/assets (images, fonts, video, audio, WASM, GLB) as optimized data URIs. Supports per-MIME optimization (sharp/ffmpeg/fontmin/gltfpack), asset overrides, and optimize-only mode.",
+  "description": "Build single-file HTML5 playables by bundling ES modules (esbuild) and inlining CSS/JS/assets (images, fonts, video, audio, WASM, GLB) as optimized data URIs. Supports per-MIME optimization (sharp/pngquant/ffmpeg/subset-font/gltfpack), asset overrides, and optimize-only mode.",
   "type": "module",
   "engines": {
     "node": ">=18"
@@ -32,7 +32,6 @@
   "dependencies": {
     "esbuild": "^0.25.0",
     "fluent-ffmpeg": "^2.1.3",
-    "fontmin": "^0.9.7",
     "fs-extra": "^11.3.0",
     "lightningcss": "^1.30.2",
     "sharp": "^0.33.5",
