@@ -147,6 +147,7 @@ export const findFileRecursive = async (targetFile, startDir) => {
 export const logSaving = (label, original, final) => {
     stats.totalAssetsOriginalSize += original;
     stats.totalAssetsFinalSize += final;
+    stats.assets.push({ label, original, final });
     const saved = original - final;
     const pct = original ? ((1 - final / original) * 100).toFixed(1) : '0.0';
     console.log(`✅ ${label}: ${original} → ${final} bytes (${pct}% saved)`);

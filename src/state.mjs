@@ -19,7 +19,8 @@ export const stats = {
     originalHtmlSize: 0,       // Розмір оригінального HTML файлу (bytes)
     totalAssetsOriginalSize: 0, // Сума розмірів оригінальних ассетів (bytes)
     totalAssetsFinalSize: 0,    // Сума розмірів ассетів після оптимізації (bytes)
-    finalFileSize: 0           // Розмір фінального зібраного файлу (bytes)
+    finalFileSize: 0,          // Розмір фінального зібраного файлу (bytes)
+    assets: []                 // [{ label, original, final }] — для звіту в кінці збірки
 };
 
 /**

@@ -263,4 +263,49 @@ export const inlineHtml = async () => {
     const saved = originalTotal - finalTotal;
     console.log(`\n🎉 One-file playable created at: dist/${htmlFileName}`);
     console.log(`📦 Final size: ${(finalTotal / 1024).toFixed(1)} KB (saved ${(saved / 1024).toFixed(1)} KB from ${(originalTotal / 1024).toFixed(1)} KB)`);
+
+    printAssetReport(finalTotal);
+};
+
+// ========================== ЗВІТ ПО АССЕТАХ І БЮДЖЕТ ==========================
+
+const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
+
+/**
+ * Друкує таблицю ассетів у порядку їхньої ваги у ФІНАЛЬНОМУ файлі
+ * (base64 додає ~33%, тому рахуємо саме інлайнений розмір) і перевіряє бюджет.
+ *
+ * Це відповідь на питання "що з'їло ліміт": без таблиці легко полірувати PNG,
+ * коли половина файлу — фонова музика.
+ */
+const printAssetReport = (finalTotal) => {
+    const budgetKb = Number(CONFIG.build?.budgetKb) || 0;
+    const rows = stats.assets
+        .filter(a => a.final > 0)
+        .map(a => ({ ...a, inlined: Math.ceil(a.final / 3) * 4 }))   // розмір у base64
+        .sort((a, b) => b.inlined - a.inlined);
+
+    if (rows.length) {
+        const assetsInlined = rows.reduce((s, r) => s + r.inlined, 0);
+        const codeBytes = Math.max(0, finalTotal - assetsInlined);
+        const width = Math.min(48, Math.max(12, ...rows.map(r => r.label.length)));
+
+        console.log('\n📊 Asset breakdown (inlined size, share of final file):');
+        for (const r of rows.slice(0, 15)) {
+            const label = r.label.length > width ? `…${r.label.slice(-(width - 1))}` : r.label.padEnd(width);
+            const share = finalTotal ? `${((r.inlined / finalTotal) * 100).toFixed(1).padStart(5)}%` : '     ';
+            console.log(`   ${label}  ${kb(r.inlined).padStart(10)}  ${share}   (${kb(r.original)} → ${kb(r.final)})`);
+        }
+        if (rows.length > 15) console.log(`   … and ${rows.length - 15} more`);
+        console.log(`   ${'HTML + CSS + JS'.padEnd(width)}  ${kb(codeBytes).padStart(10)}  ${finalTotal ? `${((codeBytes / finalTotal) * 100).toFixed(1).padStart(5)}%` : ''}`);
+    }
+
+    if (budgetKb > 0) {
+        const budgetBytes = budgetKb * 1024;
+        if (finalTotal > budgetBytes) {
+            console.warn(`\n🚨 Over budget: ${kb(finalTotal)} > ${budgetKb} KB (+${kb(finalTotal - budgetBytes)}). Biggest asset: ${rows[0]?.label ?? '—'} (${kb(rows[0]?.inlined ?? 0)})`);
+        } else {
+            console.log(`\n✅ Within budget: ${kb(finalTotal)} of ${budgetKb} KB (${kb(budgetBytes - finalTotal)} headroom)`);
+        }
+    }
 };
