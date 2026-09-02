@@ -13,6 +13,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import fs from 'fs-extra';
 import path from 'path';
 import { CONFIG } from '../config.mjs';
+import { ffprobe } from './video.mjs';
 
 /**
  * Визначає параметри кодування залежно від MIME-типу вхідного аудіо.
@@ -54,12 +55,33 @@ const getAudioParams = (mime) => {
 export const optimizeAudioFileToBuffer = async (tmpInPath, mime = 'audio/mpeg') => {
     const { codec, ext, outMime } = getAudioParams(mime);
     const tmpOut = `${tmpInPath}.${Date.now()}.min${ext}`;
+    const targetKbps = Number(CONFIG.audio.mp3Kbps) || 64;
+    const mono = !!CONFIG.audio.mono;
+
+    // ──── Пропуск "порожнього" перекодування ────
+    // Якщо джерело в тому ж контейнері вже має бітрейт ≤ цільового (і не треба
+    // зводити в моно), повторне lossy-кодування дасть ще одне покоління
+    // артефактів без економії. Повертаємо оригінал — index.mjs однаково
+    // залишить менший з двох.
+    // WAV сюди не потрапляє: він нестиснений, його завжди конвертуємо.
+    if (mime !== 'audio/wav' && outMime === mime && !mono) {
+        try {
+            const meta = await ffprobe(tmpInPath);
+            const a = meta.streams?.find(s => s.codec_type === 'audio');
+            const srcKbps = Number(a?.bit_rate || meta.format?.bit_rate || 0) / 1000;
+            if (srcKbps > 0 && srcKbps <= targetKbps * 1.05) {
+                console.log(`⏭️  audio already ≤ ${targetKbps}k (${Math.round(srcKbps)}k) — re-encode skipped`);
+                return { buffer: await fs.readFile(tmpInPath), mime };
+            }
+        } catch { /* ffprobe недоступний — просто кодуємо */ }
+    }
 
     await new Promise((resolve, reject) => {
-        ffmpeg(tmpInPath)
+        const cmd = ffmpeg(tmpInPath)
             .audioCodec(codec)
-            .audioBitrate(`${CONFIG.audio.mp3Kbps}k`)
-            .save(tmpOut)
+            .audioBitrate(`${targetKbps}k`);
+        if (mono) cmd.audioChannels(1);   // --audioMono: -ac 1
+        cmd.save(tmpOut)
             .on('end', resolve)
             .on('error', reject);
     });
