@@ -46,11 +46,20 @@ const clampNumber = (value, min, max, fallback) => {
 const smallerOrOriginal = (original, optimized) =>
     optimized?.length && optimized.length < original.length ? optimized : original;
 
-const getQualityFloor = (quality) => {
-    if (quality >= 95) return quality;
-    if (quality >= 80) return quality - 5;
-    if (quality >= 65) return quality - 8;
-    return quality;
+/**
+ * Для lossy-форматів (JPEG/WebP): приймаємо результат лише якщо він менший
+ * щонайменше на CONFIG.lossy.minGainPct відсотків. Інакше файл уже стиснений,
+ * і повторне кодування лише додає покоління артефактів (див. config.mjs).
+ */
+const lossyGainOrOriginal = (original, optimized, label) => {
+    if (!optimized?.length || optimized.length >= original.length) return original;
+    const minGain = Math.max(0, Number(CONFIG.lossy?.minGainPct) || 0);
+    const gainPct = (1 - optimized.length / original.length) * 100;
+    if (gainPct < minGain) {
+        console.log(`⏭️  ${label}: gain ${gainPct.toFixed(1)}% < ${minGain}% — already compressed, kept original`);
+        return original;
+    }
+    return optimized;
 };
 
 const optimizeJpegBuffer = async (buf) => {
@@ -65,7 +74,7 @@ const optimizeJpegBuffer = async (buf) => {
         chromaSubsampling: quality >= 80 ? '4:4:4' : '4:2:0'
     }).toBuffer();
 
-    return smallerOrOriginal(buf, out);
+    return lossyGainOrOriginal(buf, out, 'jpeg');
 };
 
 const optimizeWebpBuffer = async (buf) => {
@@ -77,7 +86,7 @@ const optimizeWebpBuffer = async (buf) => {
         nearLossless: quality >= 95
     }).toBuffer();
 
-    return smallerOrOriginal(buf, out);
+    return lossyGainOrOriginal(buf, out, 'webp');
 };
 
 // ========================== PNG ==========================
