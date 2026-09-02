@@ -71,26 +71,47 @@ const walkFiles = async (dir) => {
  * @param {string} basePath — базова директорія проєкту
  * @returns {Promise<string>} рядок з усіма унікальними символами
  */
+/** Текстові файли, з яких збираються символи для сабсету шрифтів */
+const SUBSET_TEXT_EXTS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.json', '.txt', '.svg', '.xml', '.csv']);
+/** Папки, які пропускаємо при зборі символів */
+const SUBSET_SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'bin', OVERRIDE_DIR_NAME]);
+/** Файли більші за це не читаємо (це не текст плейбла, а, скоріше, бандл/дамп) */
+const SUBSET_MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Рекурсивно збирає вміст усіх текстових файлів проєкту.
+ * Раніше читалися лише HTML + CSS з <link> + JS з <script src> верхнього рівня,
+ * і символи з імпортованих модулів чи JSON-локалізацій у сабсет не потрапляли —
+ * браузер показував їх системним шрифтом. Тепер беремо весь проєкт.
+ */
+const collectProjectText = async (dir, out) => {
+    let entries;
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) {
+            if (SUBSET_SKIP_DIRS.has(e.name)) continue;
+            await collectProjectText(p, out);
+            continue;
+        }
+        if (!SUBSET_TEXT_EXTS.has(path.extname(e.name).toLowerCase())) continue;
+        // Ліцензії/README біля шрифтів — це не текст плейбла
+        if (/^(readme|license|licence|ofl|changelog|notice)/i.test(e.name)) continue;
+        try {
+            const st = await fs.stat(p);
+            if (st.size > SUBSET_MAX_FILE_BYTES) continue;
+            out.push(await fs.readFile(p, 'utf8'));
+        } catch { }
+    }
+};
+
 const autoDetectFontSubset = async (htmlContent, basePath) => {
-    let allText = htmlContent;
+    const chunks = [htmlContent];
+    await collectProjectText(basePath, chunks);
+    let allText = chunks.join('\n');
 
-    // Збираємо текст з підключених CSS файлів
-    const cssRefs = [...htmlContent.matchAll(/<link[^>]*href=["']([^"']+\.css(?:\?[^"']*)?)["'][^>]*>/gi)];
-    for (const [, href] of cssRefs) {
-        const cssPath = path.resolve(basePath, href.split('?')[0]);
-        if (await fs.pathExists(cssPath)) {
-            allText += await fs.readFile(cssPath, 'utf8');
-        }
-    }
-
-    // Збираємо текст з підключених JS файлів
-    const jsRefs = [...htmlContent.matchAll(/<script[^>]*src=["']([^"']+\.js(?:\?[^"']*)?)["'][^>]*>/gi)];
-    for (const [, src] of jsRefs) {
-        const jsPath = path.resolve(basePath, src.split('?')[0]);
-        if (await fs.pathExists(jsPath)) {
-            allText += await fs.readFile(jsPath, 'utf8');
-        }
-    }
+    // data:URI (base64) — це не текст плейбла, лише шум із випадкових символів.
+    allText = allText.replace(/data:[a-z0-9.+\/-]+;base64,[A-Za-z0-9+\/=]+/gi, ' ');
 
     // Збираємо унікальні символи (без керуючих, крім пробілу)
     const chars = new Set(allText);
